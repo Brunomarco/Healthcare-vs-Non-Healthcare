@@ -36,13 +36,15 @@ st.title("Radiopharma OTP Dashboard")
 # ---------------- Config ----------------
 OTP_TARGET = 95
 
-# EMEA Countries (comprehensive list)
+# EMEA Countries (comprehensive list including common variations)
 EMEA_COUNTRIES = {
     # Europe
     'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 
     'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'GB', 'UK', 'NO', 'CH', 'IS',
     'AL', 'AD', 'AM', 'AZ', 'BA', 'BY', 'GE', 'XK', 'LI', 'MD', 'MC', 'ME', 'MK', 'RU', 'SM', 'RS', 
     'TR', 'UA', 'VA',
+    # Include lowercase variations that might appear
+    'de', 'gb', 'fr', 'it', 'nl', 'be', 'es', 'ch', 'at', 'dk', 'se', 'no', 'fi', 'pl', 'cz', 'hu',
     # Middle East
     'AE', 'BH', 'EG', 'IQ', 'IR', 'IL', 'JO', 'KW', 'LB', 'OM', 'PS', 'QA', 'SA', 'SY', 'YE',
     # Africa
@@ -52,7 +54,7 @@ EMEA_COUNTRIES = {
     'TG', 'TN', 'UG', 'ZM', 'ZW'
 }
 
-# Healthcare keywords for identification
+# Healthcare keywords for identification (expanded list)
 HEALTHCARE_KEYWORDS = [
     'pharma', 'medical', 'health', 'bio', 'clinical', 'hospital', 'diagnostic',
     'therapeut', 'laborator', 'patholog', 'imaging', 'surgical', 'oncolog',
@@ -62,22 +64,27 @@ HEALTHCARE_KEYWORDS = [
     'patient', 'treatment', 'disease', 'drug', 'dose', 'isotope', 'radio',
     'nuclear', 'pet', 'spect', 'immuno', 'assay', 'reagent', 'specimen',
     'sample', 'blood', 'plasma', 'serum', 'biobank', 'cryo', 'stem',
+    # Specific company names
     'marken', 'fisher', 'cardinal', 'patheon', 'organox', 'qiagen', 'abbott',
     'tosoh', 'leica', 'sophia', 'cerus', 'sirtex', 'lantheus', 'avid',
     'petnet', 'innervate', 'ndri', 'university', 'institut', 'pentec',
     'sexton', 'atomics', 'curium', 'medtronic', 'catalent', 'delpharm',
-    'veracyte', 'eckert', 'ziegler', 'shine', 'altasciences', 'smiths detection'
+    'veracyte', 'eckert', 'ziegler', 'shine', 'altasciences', 'smiths detection',
+    'onkos', 'biolabs', 'biosystem', 'life molecular', 'cerveau', 'meilleur',
+    'samsung bio', 'agilent', 'panasonic avionics'  # Panasonic Avionics makes medical equipment too
 ]
 
-# Non-healthcare keywords
+# Non-healthcare keywords (explicit exclusions)
 NON_HEALTHCARE_KEYWORDS = [
     'airline', 'airport', 'cargo', 'freight', 'logistic', 'transport',
     'express', 'disney', 'pictures', 'aviation', 'aircraft', 'aerospace',
     'volaris', 'easyjet', 'lufthansa', 'delta', 'american airlines',
     'british airways', 'nippon', 'aeromexico', 'spairliners', 'universal',
     'paramount', 'productions', 'courier', 'forwarding', 'tmr global',
-    'aeroplex', 'nova traffic', 'ups', 'endeavor air', 'panasonic avionics',
-    'storm aviation', 'adventures', 'hartford', 'tokyo electron', 'slipstick'
+    'aeroplex', 'nova traffic', 'ups', 'endeavor air', 
+    'storm aviation', 'adventures', 'hartford', 'tokyo electron', 'slipstick',
+    'sealion production', 'heathrow courier', 'macaronesia', 'exnet service',
+    'mnx global logistics', 'logical freight', 'concesionaria', 'vuela compania'
 ]
 
 CTRL_REGEX = re.compile(r"\b(agent|del\s*agt|delivery\s*agent|customs|warehouse|w/house)\b", re.I)
@@ -105,13 +112,20 @@ def _kfmt(n: float) -> str:
     except: return ""
     return f"{n/1000:.1f}K" if n >= 1000 else f"{n:.0f}"
 
-def is_healthcare(account_name):
+def is_healthcare(account_name, sheet_name=None):
     """Determine if an account is healthcare-related."""
     if not account_name:
         return False
+    
+    # Special rules by sheet
+    if sheet_name == 'AMS':
+        return True  # AMS is always healthcare
+    if sheet_name == 'Aviation SVC':
+        return False  # Aviation SVC is always non-healthcare
+    
     lower = str(account_name).lower()
     
-    # Check for non-healthcare first (higher priority)
+    # Check for explicit non-healthcare first (higher priority)
     for keyword in NON_HEALTHCARE_KEYWORDS:
         if keyword in lower:
             return False
@@ -121,6 +135,7 @@ def is_healthcare(account_name):
         if keyword in lower:
             return True
     
+    # Default to False for uncertain cases
     return False
 
 def make_semi_gauge(title: str, value: float) -> go.Figure:
@@ -142,54 +157,75 @@ def make_semi_gauge(title: str, value: float) -> go.Figure:
 
 # ---------------- IO ----------------
 @st.cache_data(show_spinner=False)
-def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame]:
+def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Read Excel and split into healthcare and non-healthcare dataframes."""
     try:
         excel_file = pd.ExcelFile(uploaded)
         all_data = []
+        stats = {
+            'total_rows': 0,
+            'emea_rows': 0,
+            'status_filtered': 0,
+            'healthcare_rows': 0,
+            'non_healthcare_rows': 0,
+            'by_sheet': {}
+        }
         
         for sheet_name in excel_file.sheet_names:
             df_sheet = pd.read_excel(uploaded, sheet_name=sheet_name)
+            initial_rows = len(df_sheet)
             df_sheet['Source_Sheet'] = sheet_name
             
-            # Filter EMEA countries
+            # Clean and standardize PU CTRY
             if 'PU CTRY' in df_sheet.columns:
-                df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
-                df_sheet = df_sheet[df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)]
+                df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip()
+                # Filter EMEA countries (handle both upper and lower case)
+                df_sheet = df_sheet[df_sheet['PU CTRY'].str.upper().isin([c.upper() for c in EMEA_COUNTRIES])]
+            
+            emea_rows = len(df_sheet)
             
             # Filter STATUS = 440-BILLED
             if 'STATUS' in df_sheet.columns:
                 df_sheet = df_sheet[df_sheet['STATUS'].astype(str).str.strip() == '440-BILLED']
             
+            final_rows = len(df_sheet)
+            
+            stats['by_sheet'][sheet_name] = {
+                'initial': initial_rows,
+                'emea': emea_rows,
+                'final': final_rows
+            }
+            
             all_data.append(df_sheet)
         
         # Combine all sheets
-        combined_df = pd.concat(all_data, ignore_index=True)
+        combined_df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+        
+        stats['total_rows'] = sum(s['initial'] for s in stats['by_sheet'].values())
+        stats['emea_rows'] = sum(s['emea'] for s in stats['by_sheet'].values())
+        stats['status_filtered'] = len(combined_df)
         
         # Categorize into healthcare and non-healthcare
         healthcare_df = pd.DataFrame()
         non_healthcare_df = pd.DataFrame()
         
-        if not combined_df.empty:
-            # Apply healthcare classification
-            if 'ACCT NM' in combined_df.columns:
-                combined_df['Is_Healthcare'] = combined_df['ACCT NM'].apply(is_healthcare)
-                
-                # Special rules by sheet
-                # AMS is always healthcare
-                combined_df.loc[combined_df['Source_Sheet'] == 'AMS', 'Is_Healthcare'] = True
-                
-                # Aviation SVC is always non-healthcare (for EMEA entries)
-                combined_df.loc[combined_df['Source_Sheet'] == 'Aviation SVC', 'Is_Healthcare'] = False
-                
-                healthcare_df = combined_df[combined_df['Is_Healthcare'] == True].copy()
-                non_healthcare_df = combined_df[combined_df['Is_Healthcare'] == False].copy()
+        if not combined_df.empty and 'ACCT NM' in combined_df.columns:
+            # Apply healthcare classification with sheet context
+            combined_df['Is_Healthcare'] = combined_df.apply(
+                lambda row: is_healthcare(row['ACCT NM'], row['Source_Sheet']), axis=1
+            )
+            
+            healthcare_df = combined_df[combined_df['Is_Healthcare'] == True].copy()
+            non_healthcare_df = combined_df[combined_df['Is_Healthcare'] == False].copy()
+            
+            stats['healthcare_rows'] = len(healthcare_df)
+            stats['non_healthcare_rows'] = len(non_healthcare_df)
         
-        return healthcare_df, non_healthcare_df
+        return healthcare_df, non_healthcare_df, stats
     
     except Exception as e:
         st.error(f"Error reading file: {str(e)}")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), {}
 
 # ---------------- Prep (ROW-LEVEL; each row = one entry) ----------------
 @st.cache_data(show_spinner=False)
@@ -356,29 +392,70 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float):
         y_net = mv["Net_OTP"].astype(float).tolist()
 
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=x, y=y_vol, name="Volume (Rows)", marker_color=NAVY,
-                             text=[_kfmt(v) for v in y_vol], textposition="outside",
-                             textfont=dict(size=12, color="#4b5563"), yaxis="y"))
-        fig.add_trace(go.Scatter(x=x, y=y_net, name="Net OTP",
-                                 mode="lines+markers", line=dict(color=GOLD, width=3),
-                                 marker=dict(size=8), yaxis="y2"))
-        for xi, yi in zip(x, y_net):
+        # Bar chart with values inside
+        fig.add_trace(go.Bar(
+            x=x, y=y_vol, name="Volume (Rows)", 
+            marker_color=NAVY,
+            text=[_kfmt(v) for v in y_vol],
+            textposition="inside",
+            textfont=dict(size=14, color="white", family="Arial Black"),
+            yaxis="y"
+        ))
+        
+        # OTP line
+        fig.add_trace(go.Scatter(
+            x=x, y=y_net, name="Net OTP",
+            mode="lines+markers", 
+            line=dict(color=GOLD, width=3),
+            marker=dict(size=10, color=GOLD),
+            yaxis="y2"
+        ))
+        
+        # Add OTP percentage labels above the line points
+        for i, (xi, yi) in enumerate(zip(x, y_net)):
             if pd.notna(yi):
-                fig.add_annotation(x=xi, y=yi, xref="x", yref="y2", yshift=28,
-                                   text=f"{yi:.2f}%", showarrow=False,
-                                   font=dict(size=12, color="#111827"))
+                fig.add_annotation(
+                    x=xi, y=yi, xref="x", yref="y2",
+                    text=f"<b>{yi:.2f}%</b>",
+                    showarrow=False,
+                    yshift=20,
+                    font=dict(size=13, color="#111827", family="Arial Black"),
+                    bgcolor="white",
+                    bordercolor=GOLD,
+                    borderwidth=1,
+                    borderpad=4
+                )
         
-        fig.add_shape(type="line", x0=-0.5, x1=len(x)-0.5,
-                      y0=float(otp_target), y1=float(otp_target),
-                      xref="x", yref="y2", line=dict(color="red", dash="dash"))
+        # Target line
+        fig.add_shape(
+            type="line", x0=-0.5, x1=len(x)-0.5,
+            y0=float(otp_target), y1=float(otp_target),
+            xref="x", yref="y2", 
+            line=dict(color="red", dash="dash", width=2)
+        )
         
-        fig.update_layout(height=520, hovermode="x unified", plot_bgcolor="white",
-                          margin=dict(l=40, r=40, t=40, b=80),
-                          legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
-                          xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
-                          yaxis=dict(title="Volume (Rows)", side="left", gridcolor=GRID),
-                          yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 130]),
-                          barmode="overlay")
+        # Add target label
+        fig.add_annotation(
+            x=len(x)-0.5, y=float(otp_target),
+            xref="x", yref="y2",
+            text=f"Target: {otp_target}%",
+            showarrow=False,
+            xshift=-50,
+            font=dict(size=12, color="red"),
+            bgcolor="white"
+        )
+        
+        fig.update_layout(
+            height=520, 
+            hovermode="x unified", 
+            plot_bgcolor="white",
+            margin=dict(l=40, r=40, t=40, b=80),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
+            xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
+            yaxis=dict(title="Volume (Rows)", side="left", gridcolor=GRID, showgrid=True),
+            yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 120], showgrid=False),
+            barmode="overlay"
+        )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No monthly volume available.")
@@ -395,29 +472,70 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float):
         y_net = mp["Net_OTP"].astype(float).tolist()
 
         figp = go.Figure()
-        figp.add_trace(go.Bar(x=x, y=y_pcs, name="Pieces", marker_color=NAVY,
-                              text=[_kfmt(v) for v in y_pcs], textposition="outside",
-                              textfont=dict(size=12, color="#4b5563"), yaxis="y"))
-        figp.add_trace(go.Scatter(x=x, y=y_net, name="Net OTP",
-                                  mode="lines+markers", line=dict(color=GOLD, width=3),
-                                  marker=dict(size=8), yaxis="y2"))
-        for xi, yi in zip(x, y_net):
+        # Bar chart with values inside
+        figp.add_trace(go.Bar(
+            x=x, y=y_pcs, name="Pieces", 
+            marker_color=NAVY,
+            text=[_kfmt(v) for v in y_pcs],
+            textposition="inside",
+            textfont=dict(size=14, color="white", family="Arial Black"),
+            yaxis="y"
+        ))
+        
+        # OTP line
+        figp.add_trace(go.Scatter(
+            x=x, y=y_net, name="Net OTP",
+            mode="lines+markers",
+            line=dict(color=GOLD, width=3),
+            marker=dict(size=10, color=GOLD),
+            yaxis="y2"
+        ))
+        
+        # Add OTP percentage labels above the line points
+        for i, (xi, yi) in enumerate(zip(x, y_net)):
             if pd.notna(yi):
-                figp.add_annotation(x=xi, y=yi, xref="x", yref="y2", yshift=28,
-                                    text=f"{yi:.2f}%", showarrow=False,
-                                    font=dict(size=12, color="#111827"))
+                figp.add_annotation(
+                    x=xi, y=yi, xref="x", yref="y2",
+                    text=f"<b>{yi:.2f}%</b>",
+                    showarrow=False,
+                    yshift=20,
+                    font=dict(size=13, color="#111827", family="Arial Black"),
+                    bgcolor="white",
+                    bordercolor=GOLD,
+                    borderwidth=1,
+                    borderpad=4
+                )
         
-        figp.add_shape(type="line", x0=-0.5, x1=len(x)-0.5,
-                       y0=float(otp_target), y1=float(otp_target),
-                       xref="x", yref="y2", line=dict(color="red", dash="dash"))
+        # Target line
+        figp.add_shape(
+            type="line", x0=-0.5, x1=len(x)-0.5,
+            y0=float(otp_target), y1=float(otp_target),
+            xref="x", yref="y2",
+            line=dict(color="red", dash="dash", width=2)
+        )
         
-        figp.update_layout(height=520, hovermode="x unified", plot_bgcolor="white",
-                           margin=dict(l=40, r=40, t=40, b=80),
-                           legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
-                           xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
-                           yaxis=dict(title="Pieces", side="left", gridcolor=GRID),
-                           yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 130]),
-                           barmode="overlay")
+        # Add target label
+        figp.add_annotation(
+            x=len(x)-0.5, y=float(otp_target),
+            xref="x", yref="y2",
+            text=f"Target: {otp_target}%",
+            showarrow=False,
+            xshift=-50,
+            font=dict(size=12, color="red"),
+            bgcolor="white"
+        )
+        
+        figp.update_layout(
+            height=520,
+            hovermode="x unified",
+            plot_bgcolor="white",
+            margin=dict(l=40, r=40, t=40, b=80),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
+            xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
+            yaxis=dict(title="Pieces", side="left", gridcolor=GRID, showgrid=True),
+            yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 120], showgrid=False),
+            barmode="overlay"
+        )
         st.plotly_chart(figp, use_container_width=True)
     else:
         st.info("No monthly PIECES available.")
@@ -434,27 +552,62 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float):
 
         fig2 = go.Figure()
         fig2.add_trace(go.Scatter(x=x, y=gross_y, mode="lines+markers", name="Gross OTP",
-                                  line=dict(color=BLUE, width=3), marker=dict(size=7)))
+                                  line=dict(color=BLUE, width=3), marker=dict(size=8)))
         fig2.add_trace(go.Scatter(x=x, y=net_y, mode="lines+markers", name="Net OTP",
-                                  line=dict(color=GREEN, width=3), marker=dict(size=7)))
+                                  line=dict(color=GREEN, width=3), marker=dict(size=8)))
+        
+        # Add percentage labels for Gross OTP
         for xi, yi in zip(x, gross_y):
             if pd.notna(yi):
-                fig2.add_annotation(x=xi, y=yi, xref="x", yref="y", yshift=28,
-                                    text=f"{yi:.2f}%", showarrow=False, font=dict(size=12, color=BLUE))
+                fig2.add_annotation(
+                    x=xi, y=yi, xref="x", yref="y",
+                    text=f"<b>{yi:.2f}%</b>",
+                    showarrow=False,
+                    yshift=20,
+                    font=dict(size=12, color=BLUE),
+                    bgcolor="rgba(255,255,255,0.8)"
+                )
+        
+        # Add percentage labels for Net OTP
         for xi, yi in zip(x, net_y):
             if pd.notna(yi):
-                fig2.add_annotation(x=xi, y=yi, xref="x", yref="y", yshift=28,
-                                    text=f"{yi:.2f}%", showarrow=False, font=dict(size=12, color=GREEN))
+                fig2.add_annotation(
+                    x=xi, y=yi, xref="x", yref="y",
+                    text=f"<b>{yi:.2f}%</b>",
+                    showarrow=False,
+                    yshift=-20,
+                    font=dict(size=12, color=GREEN),
+                    bgcolor="rgba(255,255,255,0.8)"
+                )
         
-        fig2.add_shape(type="line", x0=-0.5, x1=len(x)-0.5,
-                       y0=float(otp_target), y1=float(otp_target),
-                       xref="x", yref="y", line=dict(color="red", dash="dash"))
+        # Target line
+        fig2.add_shape(
+            type="line", x0=-0.5, x1=len(x)-0.5,
+            y0=float(otp_target), y1=float(otp_target),
+            xref="x", yref="y",
+            line=dict(color="red", dash="dash", width=2)
+        )
         
-        fig2.update_layout(height=460, hovermode="x unified", plot_bgcolor="white",
-                           margin=dict(l=40, r=40, t=40, b=80),
-                           legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
-                           xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
-                           yaxis=dict(title="OTP (%)", range=[0, 130], gridcolor=GRID))
+        # Add target label
+        fig2.add_annotation(
+            x=len(x)-0.5, y=float(otp_target),
+            xref="x", yref="y",
+            text=f"Target: {otp_target}%",
+            showarrow=False,
+            xshift=-50,
+            font=dict(size=12, color="red"),
+            bgcolor="white"
+        )
+        
+        fig2.update_layout(
+            height=460,
+            hovermode="x unified",
+            plot_bgcolor="white",
+            margin=dict(l=40, r=40, t=40, b=80),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
+            xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
+            yaxis=dict(title="OTP (%)", range=[0, 120], gridcolor=GRID, showgrid=True)
+        )
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("No monthly OTP trend available.")
@@ -512,15 +665,47 @@ if not uploaded_file:
 
 # Process uploaded file
 with st.spinner("Processing Excel file..."):
-    healthcare_df, non_healthcare_df = read_and_combine_sheets(uploaded_file)
+    healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
+
+# Show processing statistics
+with st.expander("📈 Data Processing Statistics"):
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Rows", f"{stats.get('total_rows', 0):,}")
+    with col2:
+        st.metric("EMEA Rows", f"{stats.get('emea_rows', 0):,}")
+    with col3:
+        st.metric("440-BILLED", f"{stats.get('status_filtered', 0):,}")
+    with col4:
+        st.metric("HC / Non-HC", f"{stats.get('healthcare_rows', 0):,} / {stats.get('non_healthcare_rows', 0):,}")
+    
+    if 'by_sheet' in stats:
+        st.markdown("#### Breakdown by Sheet:")
+        sheet_df = pd.DataFrame(stats['by_sheet']).T
+        sheet_df.columns = ['Initial Rows', 'After EMEA Filter', 'After Status Filter']
+        st.dataframe(sheet_df)
 
 # Create tabs
 tab1, tab2 = st.tabs(["🏥 Healthcare", "✈️ Non-Healthcare"])
 
 with tab1:
     st.markdown("## Healthcare Sector Analysis")
+    if not healthcare_df.empty:
+        st.markdown(f"**Total Healthcare Entries:** {len(healthcare_df):,}")
+        # Show sample accounts
+        with st.expander("Sample Healthcare Accounts"):
+            if 'ACCT NM' in healthcare_df.columns:
+                unique_accounts = healthcare_df['ACCT NM'].dropna().unique()[:20]
+                st.write(", ".join(unique_accounts))
     create_dashboard_view(healthcare_df, "Healthcare", otp_target)
 
 with tab2:
     st.markdown("## Non-Healthcare Sector Analysis")
+    if not non_healthcare_df.empty:
+        st.markdown(f"**Total Non-Healthcare Entries:** {len(non_healthcare_df):,}")
+        # Show sample accounts
+        with st.expander("Sample Non-Healthcare Accounts"):
+            if 'ACCT NM' in non_healthcare_df.columns:
+                unique_accounts = non_healthcare_df['ACCT NM'].dropna().unique()[:20]
+                st.write(", ".join(unique_accounts))
     create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target)
