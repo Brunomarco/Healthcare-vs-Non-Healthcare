@@ -1,96 +1,4 @@
-# ---------------- IO ----------------
-@st.cache_data(show_spinner=False)
-def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-    """Read Excel and split into healthcare and non-healthcare dataframes."""
-    try:
-        # Read ALL sheets explicitly
-        sheet_names = ['Aviation SVC', 'MNX Charter', 'AMS', 'LDN', 'Americas International Desk']
-        all_data = []
-        stats = {
-            'total_rows': 0,
-            'emea_rows': 0,
-            'status_filtered': 0,
-            'healthcare_rows': 0,
-            'non_healthcare_rows': 0,
-            'by_sheet': {}
-        }
-        
-        # Process each sheet
-        for sheet_name in sheet_names:
-            try:
-                # Read the specific sheet
-                df_sheet = pd.read_excel(uploaded, sheet_name=sheet_name, engine='openpyxl')
-                initial_rows = len(df_sheet)
-                df_sheet['Source_Sheet'] = sheet_name
-                
-                # Clean and standardize PU CTRY
-                if 'PU CTRY' in df_sheet.columns:
-                    # Remove any trailing spaces and convert to uppercase for comparison
-                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
-                    # Filter EMEA countries
-                    df_sheet_emea = df_sheet[df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)]
-                else:
-                    df_sheet_emea = df_sheet
-                
-                emea_rows = len(df_sheet_emea)
-                
-                # Filter STATUS = 440-BILLED
-                if 'STATUS' in df_sheet_emea.columns:
-                    df_sheet_final = df_sheet_emea[df_sheet_emea['STATUS'].astype(str).str.strip() == '440-BILLED']
-                else:
-                    df_sheet_final = df_sheet_emea
-                
-                final_rows = len(df_sheet_final)
-                
-                stats['by_sheet'][sheet_name] = {
-                    'initial': initial_rows,
-                    'emea': emea_rows,
-                    'final': final_rows
-                }
-                
-                # Add to combined data only if there are rows
-                if len(df_sheet_final) > 0:
-                    all_data.append(df_sheet_final)
-                    
-            except Exception as e:
-                st.warning(f"Could not read sheet {sheet_name}: {str(e)}")
-                stats['by_sheet'][sheet_name] = {
-                    'initial': 0,
-                    'emea': 0,
-                    'final': 0
-                }
-        
-        # Combine all sheets
-        if all_data:
-            combined_df = pd.concat(all_data, ignore_index=True)
-        else:
-            combined_df = pd.DataFrame()
-        
-        stats['total_rows'] = sum(s['initial'] for s in stats['by_sheet'].values())
-        stats['emea_rows'] = sum(s['emea'] for s in stats['by_sheet'].values())
-        stats['status_filtered'] = len(combined_df)
-        
-        # Categorize into healthcare and non-healthcare
-        healthcare_df = pd.DataFrame()
-        non_healthcare_df = pd.DataFrame()
-        
-        if not combined_df.empty and 'ACCT NM' in combined_df.columns:
-            # Apply healthcare classification with sheet context
-            combined_df['Is_Healthcare'] = combined_df.apply(
-                lambda row: is_healthcare(row.get('ACCT NM', ''), row.get('Source_Sheet', '')), axis=1
-            )
-            
-            healthcare_df = combined_df[combined_df['Is_Healthcare'] == True].copy()
-            non_healthcare_df = combined_df[combined_df['Is_Healthcare'] == False].copy()
-            
-            stats['healthcare_rows'] = len(healthcare_df)
-            stats['non_healthcare_rows'] = len(non_healthcare_df)
-        
-        return healthcare_df, non_healthcare_df, stats
-    
-    except Exception as e:
-        st.error(f"Error reading file: {str(e)}")
-        return pd.DataFrame(), pd.DataFrame(), {}import re
+import re
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -135,8 +43,6 @@ EMEA_COUNTRIES = {
     'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'GB', 'UK', 'NO', 'CH', 'IS',
     'AL', 'AD', 'AM', 'AZ', 'BA', 'BY', 'GE', 'XK', 'LI', 'MD', 'MC', 'ME', 'MK', 'RU', 'SM', 'RS', 
     'TR', 'UA', 'VA',
-    # Include lowercase variations that might appear
-    'de', 'gb', 'fr', 'it', 'nl', 'be', 'es', 'ch', 'at', 'dk', 'se', 'no', 'fi', 'pl', 'cz', 'hu',
     # Middle East
     'AE', 'BH', 'EG', 'IQ', 'IR', 'IL', 'JO', 'KW', 'LB', 'OM', 'PS', 'QA', 'SA', 'SY', 'YE',
     # Africa
@@ -163,7 +69,7 @@ HEALTHCARE_KEYWORDS = [
     'sexton', 'atomics', 'curium', 'medtronic', 'catalent', 'delpharm',
     'veracyte', 'eckert', 'ziegler', 'shine', 'altasciences', 'smiths detection',
     'onkos', 'biolabs', 'biosystem', 'life molecular', 'cerveau', 'meilleur',
-    'samsung bio', 'agilent', 'panasonic avionics'  # Panasonic Avionics makes medical equipment too
+    'samsung bio', 'agilent', 'panasonic avionics'
 ]
 
 # Non-healthcare keywords (explicit exclusions)
@@ -249,7 +155,7 @@ def make_semi_gauge(title: str, value: float) -> go.Figure:
 
 # ---------------- IO ----------------
 @st.cache_data(show_spinner=False)
-def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def read_and_combine_sheets(uploaded):
     """Read Excel and split into healthcare and non-healthcare dataframes."""
     try:
         # Read ALL sheets explicitly
@@ -272,15 +178,10 @@ def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame, dict]
                 initial_rows = len(df_sheet)
                 df_sheet['Source_Sheet'] = sheet_name
                 
-                # Log initial read
-                st.write(f"Reading {sheet_name}: {initial_rows} rows") if debug_mode else None
-                
                 # Clean and standardize PU CTRY
                 if 'PU CTRY' in df_sheet.columns:
-                    # Remove any trailing spaces and convert to uppercase
+                    # Remove any trailing spaces and convert to uppercase for comparison
                     df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
-                    # Also handle lowercase variations
-                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].replace({'DE': 'DE', 'de': 'DE'})
                     # Filter EMEA countries
                     df_sheet_emea = df_sheet[df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)]
                 else:
@@ -460,9 +361,9 @@ def calc_summary(d: pd.DataFrame):
     controllables   = int(late_df["Is_Controllable"].sum())
     uncontrollables = exceptions - controllables
     volume_total    = int(len(d.dropna(subset=["_pod"])))
-    return round(gross,2) if pd.notna(gross) else np.nan, \
-           round(net,2)   if pd.notna(net)   else np.nan, \
-           volume_total, exceptions, controllables, uncontrollables
+    return (round(gross,2) if pd.notna(gross) else np.nan,
+            round(net,2)   if pd.notna(net)   else np.nan,
+            volume_total, exceptions, controllables, uncontrollables)
 
 def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, debug_mode: bool = False):
     """Create dashboard view for a specific dataframe (healthcare or non-healthcare)."""
