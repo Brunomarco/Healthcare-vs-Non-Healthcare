@@ -1,4 +1,96 @@
-import re
+# ---------------- IO ----------------
+@st.cache_data(show_spinner=False)
+def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """Read Excel and split into healthcare and non-healthcare dataframes."""
+    try:
+        # Read ALL sheets explicitly
+        sheet_names = ['Aviation SVC', 'MNX Charter', 'AMS', 'LDN', 'Americas International Desk']
+        all_data = []
+        stats = {
+            'total_rows': 0,
+            'emea_rows': 0,
+            'status_filtered': 0,
+            'healthcare_rows': 0,
+            'non_healthcare_rows': 0,
+            'by_sheet': {}
+        }
+        
+        # Process each sheet
+        for sheet_name in sheet_names:
+            try:
+                # Read the specific sheet
+                df_sheet = pd.read_excel(uploaded, sheet_name=sheet_name, engine='openpyxl')
+                initial_rows = len(df_sheet)
+                df_sheet['Source_Sheet'] = sheet_name
+                
+                # Clean and standardize PU CTRY
+                if 'PU CTRY' in df_sheet.columns:
+                    # Remove any trailing spaces and convert to uppercase for comparison
+                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
+                    # Filter EMEA countries
+                    df_sheet_emea = df_sheet[df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)]
+                else:
+                    df_sheet_emea = df_sheet
+                
+                emea_rows = len(df_sheet_emea)
+                
+                # Filter STATUS = 440-BILLED
+                if 'STATUS' in df_sheet_emea.columns:
+                    df_sheet_final = df_sheet_emea[df_sheet_emea['STATUS'].astype(str).str.strip() == '440-BILLED']
+                else:
+                    df_sheet_final = df_sheet_emea
+                
+                final_rows = len(df_sheet_final)
+                
+                stats['by_sheet'][sheet_name] = {
+                    'initial': initial_rows,
+                    'emea': emea_rows,
+                    'final': final_rows
+                }
+                
+                # Add to combined data only if there are rows
+                if len(df_sheet_final) > 0:
+                    all_data.append(df_sheet_final)
+                    
+            except Exception as e:
+                st.warning(f"Could not read sheet {sheet_name}: {str(e)}")
+                stats['by_sheet'][sheet_name] = {
+                    'initial': 0,
+                    'emea': 0,
+                    'final': 0
+                }
+        
+        # Combine all sheets
+        if all_data:
+            combined_df = pd.concat(all_data, ignore_index=True)
+        else:
+            combined_df = pd.DataFrame()
+        
+        stats['total_rows'] = sum(s['initial'] for s in stats['by_sheet'].values())
+        stats['emea_rows'] = sum(s['emea'] for s in stats['by_sheet'].values())
+        stats['status_filtered'] = len(combined_df)
+        
+        # Categorize into healthcare and non-healthcare
+        healthcare_df = pd.DataFrame()
+        non_healthcare_df = pd.DataFrame()
+        
+        if not combined_df.empty and 'ACCT NM' in combined_df.columns:
+            # Apply healthcare classification with sheet context
+            combined_df['Is_Healthcare'] = combined_df.apply(
+                lambda row: is_healthcare(row.get('ACCT NM', ''), row.get('Source_Sheet', '')), axis=1
+            )
+            
+            healthcare_df = combined_df[combined_df['Is_Healthcare'] == True].copy()
+            non_healthcare_df = combined_df[combined_df['Is_Healthcare'] == False].copy()
+            
+            stats['healthcare_rows'] = len(healthcare_df)
+            stats['non_healthcare_rows'] = len(non_healthcare_df)
+        
+        return healthcare_df, non_healthcare_df, stats
+    
+    except Exception as e:
+        st.error(f"Error reading file: {str(e)}")
+        return pd.DataFrame(), pd.DataFrame(), {}import re
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -160,7 +252,8 @@ def make_semi_gauge(title: str, value: float) -> go.Figure:
 def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Read Excel and split into healthcare and non-healthcare dataframes."""
     try:
-        excel_file = pd.ExcelFile(uploaded)
+        # Read ALL sheets explicitly
+        sheet_names = ['Aviation SVC', 'MNX Charter', 'AMS', 'LDN', 'Americas International Desk']
         all_data = []
         stats = {
             'total_rows': 0,
@@ -171,35 +264,61 @@ def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame, dict]
             'by_sheet': {}
         }
         
-        for sheet_name in excel_file.sheet_names:
-            df_sheet = pd.read_excel(uploaded, sheet_name=sheet_name)
-            initial_rows = len(df_sheet)
-            df_sheet['Source_Sheet'] = sheet_name
-            
-            # Clean and standardize PU CTRY
-            if 'PU CTRY' in df_sheet.columns:
-                df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip()
-                # Filter EMEA countries (handle both upper and lower case)
-                df_sheet = df_sheet[df_sheet['PU CTRY'].str.upper().isin([c.upper() for c in EMEA_COUNTRIES])]
-            
-            emea_rows = len(df_sheet)
-            
-            # Filter STATUS = 440-BILLED
-            if 'STATUS' in df_sheet.columns:
-                df_sheet = df_sheet[df_sheet['STATUS'].astype(str).str.strip() == '440-BILLED']
-            
-            final_rows = len(df_sheet)
-            
-            stats['by_sheet'][sheet_name] = {
-                'initial': initial_rows,
-                'emea': emea_rows,
-                'final': final_rows
-            }
-            
-            all_data.append(df_sheet)
+        # Process each sheet
+        for sheet_name in sheet_names:
+            try:
+                # Read the specific sheet
+                df_sheet = pd.read_excel(uploaded, sheet_name=sheet_name, engine='openpyxl')
+                initial_rows = len(df_sheet)
+                df_sheet['Source_Sheet'] = sheet_name
+                
+                # Log initial read
+                st.write(f"Reading {sheet_name}: {initial_rows} rows") if debug_mode else None
+                
+                # Clean and standardize PU CTRY
+                if 'PU CTRY' in df_sheet.columns:
+                    # Remove any trailing spaces and convert to uppercase
+                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
+                    # Also handle lowercase variations
+                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].replace({'DE': 'DE', 'de': 'DE'})
+                    # Filter EMEA countries
+                    df_sheet_emea = df_sheet[df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)]
+                else:
+                    df_sheet_emea = df_sheet
+                
+                emea_rows = len(df_sheet_emea)
+                
+                # Filter STATUS = 440-BILLED
+                if 'STATUS' in df_sheet_emea.columns:
+                    df_sheet_final = df_sheet_emea[df_sheet_emea['STATUS'].astype(str).str.strip() == '440-BILLED']
+                else:
+                    df_sheet_final = df_sheet_emea
+                
+                final_rows = len(df_sheet_final)
+                
+                stats['by_sheet'][sheet_name] = {
+                    'initial': initial_rows,
+                    'emea': emea_rows,
+                    'final': final_rows
+                }
+                
+                # Add to combined data only if there are rows
+                if len(df_sheet_final) > 0:
+                    all_data.append(df_sheet_final)
+                    
+            except Exception as e:
+                st.warning(f"Could not read sheet {sheet_name}: {str(e)}")
+                stats['by_sheet'][sheet_name] = {
+                    'initial': 0,
+                    'emea': 0,
+                    'final': 0
+                }
         
         # Combine all sheets
-        combined_df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+        if all_data:
+            combined_df = pd.concat(all_data, ignore_index=True)
+        else:
+            combined_df = pd.DataFrame()
         
         stats['total_rows'] = sum(s['initial'] for s in stats['by_sheet'].values())
         stats['emea_rows'] = sum(s['emea'] for s in stats['by_sheet'].values())
@@ -212,7 +331,7 @@ def read_and_combine_sheets(uploaded) -> tuple[pd.DataFrame, pd.DataFrame, dict]
         if not combined_df.empty and 'ACCT NM' in combined_df.columns:
             # Apply healthcare classification with sheet context
             combined_df['Is_Healthcare'] = combined_df.apply(
-                lambda row: is_healthcare(row['ACCT NM'], row['Source_Sheet']), axis=1
+                lambda row: is_healthcare(row.get('ACCT NM', ''), row.get('Source_Sheet', '')), axis=1
             )
             
             healthcare_df = combined_df[combined_df['Is_Healthcare'] == True].copy()
@@ -243,19 +362,27 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     
     d = df.copy()
     
-    # Dates
+    # Parse POD dates - this is critical for monthly grouping
     if 'POD DATE/TIME' in d.columns:
         d["_pod"] = _excel_to_dt(d["POD DATE/TIME"])
+        # Log how many valid POD dates we have
+        valid_pods = d["_pod"].notna().sum()
+        total_rows = len(d)
+        if valid_pods < total_rows * 0.5:  # If less than 50% have valid POD
+            st.warning(f"Only {valid_pods} out of {total_rows} rows have valid POD dates")
     else:
         d["_pod"] = pd.NaT
+        st.error("POD DATE/TIME column not found!")
     
+    # Parse target dates
     target_raw = _get_target_series(d)
     d["_target"] = _excel_to_dt(target_raw) if target_raw is not None else pd.NaT
 
-    # Month keys from POD
-    d["Month_YYYY_MM"] = d["_pod"].dt.to_period("M").astype(str)
+    # Create month keys from POD - THIS IS THE KEY GROUPING
+    # Each POD date gets grouped into its month
+    d["Month_YYYY_MM"] = d["_pod"].dt.to_period("M").astype(str)  # e.g., '2025-01'
     d["Month_Sort"] = pd.to_datetime(d["Month_YYYY_MM"] + "-01", errors='coerce')
-    d["Month_Display"] = d["Month_Sort"].dt.strftime("%b %Y")
+    d["Month_Display"] = d["Month_Sort"].dt.strftime("%b %Y")  # e.g., 'Jan 2025'
 
     # Controllable flag (QC NAME)
     if "QC NAME" in d.columns:
@@ -271,7 +398,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     else:
         d["PIECES"] = 0
 
-    # Row-level OTP
+    # Row-level OTP calculation
     ok = d["_pod"].notna() & d["_target"].notna()
     d["On_Time_Gross"] = False
     d.loc[ok, "On_Time_Gross"] = d.loc[ok, "_pod"] <= d.loc[ok, "_target"]
@@ -286,21 +413,26 @@ def monthly_frames(d: pd.DataFrame):
     if d.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
+    # Filter to only rows with valid POD dates
     base_vol = d.dropna(subset=["_pod"]).copy()
     
     if base_vol.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
+    # Group by POD month for volume
     vol = (base_vol.groupby(["Month_YYYY_MM","Month_Display","Month_Sort"], as_index=False)
                  .size().rename(columns={"size":"Volume"}))
 
+    # Group by POD month for pieces
     pieces = (base_vol.groupby(["Month_YYYY_MM","Month_Display","Month_Sort"], as_index=False)
                       .agg(Pieces=("PIECES","sum")))
 
+    # For OTP, need both POD and target dates
     base_otp = d.dropna(subset=["_pod","_target"]).copy()
     if base_otp.empty:
         otp = pd.DataFrame(columns=["Month_YYYY_MM","Month_Display","Month_Sort","Gross_OTP","Net_OTP"])
     else:
+        # Group by POD month for OTP calculations
         otp = (base_otp.groupby(["Month_YYYY_MM","Month_Display","Month_Sort"], as_index=False)
                       .agg(Gross_On=("On_Time_Gross","sum"),
                            Gross_Tot=("On_Time_Gross","count"),
@@ -309,6 +441,7 @@ def monthly_frames(d: pd.DataFrame):
         otp["Gross_OTP"] = (otp["Gross_On"] / otp["Gross_Tot"] * 100).round(2)
         otp["Net_OTP"]   = (otp["Net_On"]   / otp["Net_Tot"]   * 100).round(2)
 
+    # Sort all dataframes by month
     vol, pieces, otp = [x.sort_values("Month_Sort") for x in (vol, pieces, otp)]
     return vol, pieces, otp
 
