@@ -178,6 +178,12 @@ def read_and_combine_sheets(uploaded):
                 initial_rows = len(df_sheet)
                 df_sheet['Source_Sheet'] = sheet_name
                 
+                # Validate the sheet has required columns
+                required_cols = ['PU CTRY', 'STATUS', 'POD DATE/TIME']
+                missing_cols = [col for col in required_cols if col not in df_sheet.columns]
+                if missing_cols:
+                    st.warning(f"Sheet {sheet_name} missing columns: {missing_cols}")
+                
                 # Clean and standardize PU CTRY
                 if 'PU CTRY' in df_sheet.columns:
                     # Remove any trailing spaces and convert to uppercase for comparison
@@ -383,10 +389,28 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
         with st.expander(f"🔍 Debug: {tab_name} Monthly Grouping"):
             pod_dates = processed_df.dropna(subset=["_pod"])
             if not pod_dates.empty:
-                st.write(f"Total rows with POD dates: {len(pod_dates)}")
+                st.write(f"**Total rows processed:** {len(processed_df):,}")
+                st.write(f"**Rows with valid POD dates:** {len(pod_dates):,}")
+                
+                # Show source sheet contribution
+                if 'Source_Sheet' in pod_dates.columns:
+                    st.write("\n**POD rows by source sheet:**")
+                    source_counts = pod_dates['Source_Sheet'].value_counts()
+                    for sheet, count in source_counts.items():
+                        st.write(f"   {sheet}: {count:,} rows")
+                
+                # Monthly breakdown
                 month_counts = pod_dates.groupby('Month_Display').size().sort_index()
-                st.write("Entries per month:")
+                st.write("\n**Entries per month:**")
                 st.dataframe(month_counts)
+                
+                # Total volume check
+                st.write(f"\n**Total volume (sum of all months):** {month_counts.sum():,}")
+                st.write(f"**Should equal rows with POD:** {len(pod_dates):,}")
+                if month_counts.sum() == len(pod_dates):
+                    st.success("✅ Monthly volumes add up correctly!")
+                else:
+                    st.error("❌ Monthly volume mismatch!")
     
     vol_pod, pieces_pod, otp_pod = monthly_frames(processed_df)
     gross_otp, net_otp, volume_total, exceptions, controllables, uncontrollables = calc_summary(processed_df)
@@ -718,6 +742,38 @@ if not uploaded_file:
 with st.spinner("Processing Excel file..."):
     healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
 
+# Detailed validation info
+if debug_mode:
+    with st.expander("🔍 Debug: Complete Data Flow"):
+        st.write("**1. Sheets Read:**")
+        for sheet_name in ['Aviation SVC', 'MNX Charter', 'AMS', 'LDN', 'Americas International Desk']:
+            if sheet_name in stats.get('by_sheet', {}):
+                sheet_stats = stats['by_sheet'][sheet_name]
+                st.write(f"   {sheet_name}:")
+                st.write(f"      - Initial: {sheet_stats['initial']:,} rows")
+                st.write(f"      - After EMEA filter: {sheet_stats['emea']:,} rows")
+                st.write(f"      - After 440-BILLED filter: {sheet_stats['final']:,} rows")
+        
+        st.write("\n**2. Combined Data:**")
+        st.write(f"   Total combined (EMEA + 440-BILLED): {stats.get('status_filtered', 0):,} rows")
+        
+        st.write("\n**3. Healthcare Classification:**")
+        st.write(f"   Healthcare: {stats.get('healthcare_rows', 0):,} rows")
+        st.write(f"   Non-Healthcare: {stats.get('non_healthcare_rows', 0):,} rows")
+        
+        # Show which sheets contribute to each category
+        if not healthcare_df.empty and 'Source_Sheet' in healthcare_df.columns:
+            st.write("\n**Healthcare by Source:**")
+            hc_sources = healthcare_df['Source_Sheet'].value_counts()
+            for sheet, count in hc_sources.items():
+                st.write(f"   {sheet}: {count:,} rows")
+        
+        if not non_healthcare_df.empty and 'Source_Sheet' in non_healthcare_df.columns:
+            st.write("\n**Non-Healthcare by Source:**")
+            non_hc_sources = non_healthcare_df['Source_Sheet'].value_counts()
+            for sheet, count in non_hc_sources.items():
+                st.write(f"   {sheet}: {count:,} rows")
+
 # Show processing statistics
 with st.expander("📈 Data Processing Statistics"):
     col1, col2, col3, col4 = st.columns(4)
@@ -735,6 +791,16 @@ with st.expander("📈 Data Processing Statistics"):
         sheet_df = pd.DataFrame(stats['by_sheet']).T
         sheet_df.columns = ['Initial Rows', 'After EMEA Filter', 'After Status Filter']
         st.dataframe(sheet_df)
+        
+        # Additional validation
+        st.markdown("#### Validation:")
+        total_processed = stats.get('healthcare_rows', 0) + stats.get('non_healthcare_rows', 0)
+        st.write(f"✓ Total after filters: {stats.get('status_filtered', 0)}")
+        st.write(f"✓ HC + Non-HC total: {total_processed}")
+        if total_processed == stats.get('status_filtered', 0):
+            st.success("✅ All filtered rows are categorized correctly!")
+        else:
+            st.warning(f"⚠️ Mismatch: {stats.get('status_filtered', 0) - total_processed} rows not categorized")
 
 # Create tabs
 tab1, tab2 = st.tabs(["🏥 Healthcare", "✈️ Non-Healthcare"])
