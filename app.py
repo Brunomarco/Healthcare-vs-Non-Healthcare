@@ -331,7 +331,7 @@ def calc_summary(d: pd.DataFrame):
            round(net,2)   if pd.notna(net)   else np.nan, \
            volume_total, exceptions, controllables, uncontrollables
 
-def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float):
+def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, debug_mode: bool = False):
     """Create dashboard view for a specific dataframe (healthcare or non-healthcare)."""
     if df.empty:
         st.info(f"No {tab_name} data available after filtering for EMEA countries and 440-BILLED status.")
@@ -343,6 +343,16 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float):
     if processed_df.empty:
         st.error(f"No {tab_name} data to display after processing.")
         return
+    
+    # Debug: Show monthly grouping details
+    if debug_mode:
+        with st.expander(f"🔍 Debug: {tab_name} Monthly Grouping"):
+            pod_dates = processed_df.dropna(subset=["_pod"])
+            if not pod_dates.empty:
+                st.write(f"Total rows with POD dates: {len(pod_dates)}")
+                month_counts = pod_dates.groupby('Month_Display').size().sort_index()
+                st.write("Entries per month:")
+                st.dataframe(month_counts)
     
     vol_pod, pieces_pod, otp_pod = monthly_frames(processed_df)
     gross_otp, net_otp, volume_total, exceptions, controllables, uncontrollables = calc_summary(processed_df)
@@ -392,14 +402,16 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float):
         y_net = mv["Net_OTP"].astype(float).tolist()
 
         fig = go.Figure()
-        # Bar chart with values inside
+        # Bar chart with values at bottom
         fig.add_trace(go.Bar(
             x=x, y=y_vol, name="Volume (Rows)", 
             marker_color=NAVY,
             text=[_kfmt(v) for v in y_vol],
             textposition="inside",
             textfont=dict(size=14, color="white", family="Arial Black"),
-            yaxis="y"
+            textangle=0,
+            yaxis="y",
+            insidetextanchor="start"  # This anchors text at bottom of bar
         ))
         
         # OTP line
@@ -472,14 +484,16 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float):
         y_net = mp["Net_OTP"].astype(float).tolist()
 
         figp = go.Figure()
-        # Bar chart with values inside
+        # Bar chart with values at bottom
         figp.add_trace(go.Bar(
             x=x, y=y_pcs, name="Pieces", 
             marker_color=NAVY,
             text=[_kfmt(v) for v in y_pcs],
             textposition="inside",
             textfont=dict(size=14, color="white", family="Arial Black"),
-            yaxis="y"
+            textangle=0,
+            yaxis="y",
+            insidetextanchor="start"  # This anchors text at bottom of bar
         ))
         
         # OTP line
@@ -633,6 +647,9 @@ with st.sidebar:
     st.markdown("### ⚙️ Settings")
     otp_target = st.number_input("OTP Target (%)", min_value=0, max_value=100, value=OTP_TARGET, step=1)
     
+    # Debug mode checkbox
+    debug_mode = st.checkbox("Show Debug Information", value=False)
+    
     st.markdown("---")
     st.markdown("### 📊 About this Dashboard")
     st.markdown("""
@@ -697,7 +714,25 @@ with tab1:
             if 'ACCT NM' in healthcare_df.columns:
                 unique_accounts = healthcare_df['ACCT NM'].dropna().unique()[:20]
                 st.write(", ".join(unique_accounts))
-    create_dashboard_view(healthcare_df, "Healthcare", otp_target)
+        
+        # Debug info
+        if debug_mode:
+            with st.expander("🔍 Debug: Healthcare POD Date Processing"):
+                if 'POD DATE/TIME' in healthcare_df.columns:
+                    sample_pod = healthcare_df[['POD DATE/TIME']].dropna().head(10)
+                    st.write("Sample POD DATE/TIME values:")
+                    st.dataframe(sample_pod)
+                    
+                    # Show how dates are being parsed
+                    test_dates = _excel_to_dt(healthcare_df['POD DATE/TIME'].head(10))
+                    st.write("Parsed dates:")
+                    st.write(test_dates.to_list())
+                    
+                    # Show month grouping
+                    st.write("Month grouping (YYYY-MM):")
+                    st.write(test_dates.dt.to_period("M").astype(str).to_list())
+    
+    create_dashboard_view(healthcare_df, "Healthcare", otp_target, debug_mode)
 
 with tab2:
     st.markdown("## Non-Healthcare Sector Analysis")
@@ -708,4 +743,22 @@ with tab2:
             if 'ACCT NM' in non_healthcare_df.columns:
                 unique_accounts = non_healthcare_df['ACCT NM'].dropna().unique()[:20]
                 st.write(", ".join(unique_accounts))
-    create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target)
+        
+        # Debug info
+        if debug_mode:
+            with st.expander("🔍 Debug: Non-Healthcare POD Date Processing"):
+                if 'POD DATE/TIME' in non_healthcare_df.columns:
+                    sample_pod = non_healthcare_df[['POD DATE/TIME']].dropna().head(10)
+                    st.write("Sample POD DATE/TIME values:")
+                    st.dataframe(sample_pod)
+                    
+                    # Show how dates are being parsed
+                    test_dates = _excel_to_dt(non_healthcare_df['POD DATE/TIME'].head(10))
+                    st.write("Parsed dates:")
+                    st.write(test_dates.to_list())
+                    
+                    # Show month grouping
+                    st.write("Month grouping (YYYY-MM):")
+                    st.write(test_dates.dt.to_period("M").astype(str).to_list())
+    
+    create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
