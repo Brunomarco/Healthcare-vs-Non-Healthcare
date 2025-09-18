@@ -684,48 +684,45 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
     else:
         st.info("No monthly OTP trend available.")
 
-        # ---------------- Chart: 5 Worst Accounts by Net OTP — August ----------------
+        # ---------------- Chart: 5 Worst Accounts by Net OTP — August (exclude 0% & NaN) ----------------
     st.subheader(f"{tab_name}: 5 Worst Accounts by Net OTP — August")
     if 'ACCT NM' in processed_df.columns:
-        # Filter rows with both POD and target (consistent with OTP calculation)
         base = processed_df.dropna(subset=['_pod', '_target']).copy()
         if not base.empty:
-            # Keep only August rows
             base['Month'] = base['_pod'].dt.month
             base['Year']  = base['_pod'].dt.year
             aug_df = base[base['Month'] == 8]
 
             if not aug_df.empty:
-                # Pick the latest August year present in data
                 latest_aug_year = int(aug_df['Year'].max())
                 aug_latest = aug_df[aug_df['Year'] == latest_aug_year].copy()
 
-                # Compute Net OTP per account for that August
                 grp = (aug_latest.groupby('ACCT NM', dropna=False)
-                                 .agg(Net_On=('On_Time_Net', 'sum'),
-                                      Tot=('On_Time_Net', 'count'))
-                                 .reset_index())
-                grp['Net_OTP'] = (grp['Net_On'] / grp['Tot'] * 100).round(2)
+                                .agg(Net_On=('On_Time_Net', 'sum'),
+                                     Tot=('On_Time_Net', 'count'))
+                                .reset_index())
+                # Compute Net OTP and filter out NaN and 0%
+                grp['Net_OTP'] = (grp['Net_On'] / grp['Tot'] * 100)
+                grp = grp[grp['Net_OTP'].notna() & (grp['Net_OTP'] > 0)]
 
-                # Sort ascending and take 5 worst
-                worst5 = grp.sort_values('Net_OTP', ascending=True).head(5)
+                if not grp.empty:
+                    worst = grp.nsmallest(5, 'Net_OTP').copy()
+                    worst['Net_OTP'] = worst['Net_OTP'].round(2)
 
-                if not worst5.empty:
                     figw = go.Figure()
                     figw.add_trace(go.Bar(
-                        x=worst5['Net_OTP'],
-                        y=worst5['ACCT NM'].astype(str),
+                        x=worst['Net_OTP'],
+                        y=worst['ACCT NM'].astype(str),
                         orientation='h',
                         marker_color=NAVY,
-                        text=[f"{v:.2f}%" for v in worst5['Net_OTP']],
+                        text=[f"{v:.2f}%" for v in worst['Net_OTP']],
                         textposition='outside'
                     ))
 
-                    # Add target line
                     figw.add_shape(
                         type="line",
                         x0=float(otp_target), x1=float(otp_target),
-                        y0=-0.5, y1=len(worst5)-0.5,
+                        y0=-0.5, y1=len(worst)-0.5,
                         xref="x", yref="y",
                         line=dict(color="red", dash="dash", width=2)
                     )
@@ -747,7 +744,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                     )
                     st.plotly_chart(figw, use_container_width=True)
                 else:
-                    st.info(f"No account-level OTP found for August {latest_aug_year}.")
+                    st.info(f"No non-null, >0% Net OTP accounts for August {latest_aug_year}.")
             else:
                 st.info("No August data available in the current dataset.")
         else:
