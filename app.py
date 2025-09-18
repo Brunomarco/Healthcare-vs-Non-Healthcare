@@ -684,50 +684,50 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
     else:
         st.info("No monthly OTP trend available.")
 
-            # ---------------- Chart: 5 Worst Accounts by Net OTP — August (exclude 0% & NaN) ----------------
+                # ---------------- Chart: 5 Worst Accounts by Net OTP — August (exclude 0% & NaN) + Volume ----------------
     st.subheader(f"{tab_name}: 5 Worst Accounts by Net OTP — August")
 
-    # Use the already-processed frame (has On_Time_Net, _pod, etc.)
     if 'ACCT NM' in processed_df.columns:
         base = processed_df.dropna(subset=['_pod', '_target']).copy()
-
         if not base.empty:
-            # Keep only August rows (by POD month)
             base['Month'] = base['_pod'].dt.month
             base['Year']  = base['_pod'].dt.year
             aug_df = base[base['Month'] == 8]
 
             if not aug_df.empty:
-                # Latest August year in the data
                 latest_aug_year = int(aug_df['Year'].max())
                 aug_latest = aug_df[aug_df['Year'] == latest_aug_year].copy()
 
-                # Clean account names: drop NaN/blank
+                # Clean account names
                 aug_latest['ACCT NM'] = aug_latest['ACCT NM'].astype(str).str.strip()
                 aug_latest = aug_latest[aug_latest['ACCT NM'].ne('')]
 
                 if not aug_latest.empty:
-                    # Net OTP per account for that August (each row = one entry → mean of booleans)
+                    # Net OTP (% as mean of boolean) + Volume (count of rows) for August
                     grp = (aug_latest.groupby('ACCT NM', as_index=False)
                                      .agg(Net_OTP=('On_Time_Net', 'mean'),
-                                          Shipments=('On_Time_Net', 'size')))
-                    grp['Net_OTP'] = (grp['Net_OTP'] * 100)
+                                          Volume=('On_Time_Net', 'size')))
+                    grp['Net_OTP'] = grp['Net_OTP'] * 100
 
-                    # Exclude NaN and 0%
+                    # Exclude NaN and 0% Net OTP
                     grp = grp[grp['Net_OTP'].notna() & (grp['Net_OTP'] > 0)]
 
                     if not grp.empty:
                         worst = grp.nsmallest(5, 'Net_OTP').copy()
                         worst['Net_OTP'] = worst['Net_OTP'].round(2)
 
+                        # Bar chart with Net OTP and Volume in labels + hover
                         figw = go.Figure()
                         figw.add_trace(go.Bar(
                             x=worst['Net_OTP'],
                             y=worst['ACCT NM'],
                             orientation='h',
                             marker_color=NAVY,
-                            text=[f"{v:.2f}%" for v in worst['Net_OTP']],
-                            textposition='outside'
+                            # Show Net OTP and Volume in the outside label
+                            text=[f"{otp:.2f}%  •  Vol {int(v)}" for otp, v in zip(worst['Net_OTP'], worst['Volume'])],
+                            textposition='outside',
+                            hovertemplate="<b>%{y}</b><br>Net OTP: %{x:.2f}%<br>Volume: %{customdata} rows<extra></extra>",
+                            customdata=worst['Volume']
                         ))
 
                         # Target reference
@@ -748,13 +748,24 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                         )
 
                         figw.update_layout(
-                            height=360,
+                            title_text=f"August {latest_aug_year} — Worst 5 by Net OTP (with Volume)",
+                            height=380,
                             plot_bgcolor="white",
-                            margin=dict(l=10, r=40, t=20, b=40),
+                            margin=dict(l=10, r=40, t=40, b=40),
                             xaxis=dict(title="Net OTP (%)", range=[0, 110], gridcolor=GRID, showgrid=True),
                             yaxis=dict(title="", automargin=True)
                         )
                         st.plotly_chart(figw, use_container_width=True)
+
+                        # Compact table below for auditing
+                        st.caption("Worst 5 accounts — August "
+                                   f"{latest_aug_year} (Net OTP and Volume)")
+                        st.dataframe(
+                            worst[['ACCT NM', 'Net_OTP', 'Volume']].rename(
+                                columns={'ACCT NM':'Account', 'Net_OTP':'Net OTP (%)'}
+                            ),
+                            use_container_width=True
+                        )
                     else:
                         st.info(f"No non-null, >0% Net OTP accounts for August {latest_aug_year}.")
                 else:
