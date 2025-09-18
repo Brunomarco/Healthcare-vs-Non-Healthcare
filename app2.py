@@ -404,6 +404,11 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                 st.write("\n**Entries per month:**")
                 st.dataframe(month_counts)
                 
+                # Check for August data specifically
+                if '_pod' in processed_df.columns:
+                    aug_check = processed_df[processed_df['_pod'].dt.month == 8] if processed_df['_pod'].notna().any() else pd.DataFrame()
+                    st.write(f"\n**August data check:** {len(aug_check)} rows in August")
+                
                 # Total volume check
                 st.write(f"\n**Total volume (sum of all months):** {month_counts.sum():,}")
                 st.write(f"**Should equal rows with POD:** {len(pod_dates):,}")
