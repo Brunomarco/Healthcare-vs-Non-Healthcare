@@ -684,73 +684,88 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
     else:
         st.info("No monthly OTP trend available.")
 
-        # ---------------- Chart: 5 Worst Accounts by Net OTP — August (exclude 0% & NaN) ----------------
+            # ---------------- Chart: 5 Worst Accounts by Net OTP — August (exclude 0% & NaN) ----------------
     st.subheader(f"{tab_name}: 5 Worst Accounts by Net OTP — August")
+
+    # Use the already-processed frame (has On_Time_Net, _pod, etc.)
     if 'ACCT NM' in processed_df.columns:
         base = processed_df.dropna(subset=['_pod', '_target']).copy()
+
         if not base.empty:
+            # Keep only August rows (by POD month)
             base['Month'] = base['_pod'].dt.month
             base['Year']  = base['_pod'].dt.year
             aug_df = base[base['Month'] == 8]
 
             if not aug_df.empty:
+                # Latest August year in the data
                 latest_aug_year = int(aug_df['Year'].max())
                 aug_latest = aug_df[aug_df['Year'] == latest_aug_year].copy()
 
-                grp = (aug_latest.groupby('ACCT NM', dropna=False)
-                                .agg(Net_On=('On_Time_Net', 'sum'),
-                                     Tot=('On_Time_Net', 'count'))
-                                .reset_index())
-                # Compute Net OTP and filter out NaN and 0%
-                grp['Net_OTP'] = (grp['Net_On'] / grp['Tot'] * 100)
-                grp = grp[grp['Net_OTP'].notna() & (grp['Net_OTP'] > 0)]
+                # Clean account names: drop NaN/blank
+                aug_latest['ACCT NM'] = aug_latest['ACCT NM'].astype(str).str.strip()
+                aug_latest = aug_latest[aug_latest['ACCT NM'].ne('')]
 
-                if not grp.empty:
-                    worst = grp.nsmallest(5, 'Net_OTP').copy()
-                    worst['Net_OTP'] = worst['Net_OTP'].round(2)
+                if not aug_latest.empty:
+                    # Net OTP per account for that August (each row = one entry → mean of booleans)
+                    grp = (aug_latest.groupby('ACCT NM', as_index=False)
+                                     .agg(Net_OTP=('On_Time_Net', 'mean'),
+                                          Shipments=('On_Time_Net', 'size')))
+                    grp['Net_OTP'] = (grp['Net_OTP'] * 100)
 
-                    figw = go.Figure()
-                    figw.add_trace(go.Bar(
-                        x=worst['Net_OTP'],
-                        y=worst['ACCT NM'].astype(str),
-                        orientation='h',
-                        marker_color=NAVY,
-                        text=[f"{v:.2f}%" for v in worst['Net_OTP']],
-                        textposition='outside'
-                    ))
+                    # Exclude NaN and 0%
+                    grp = grp[grp['Net_OTP'].notna() & (grp['Net_OTP'] > 0)]
 
-                    figw.add_shape(
-                        type="line",
-                        x0=float(otp_target), x1=float(otp_target),
-                        y0=-0.5, y1=len(worst)-0.5,
-                        xref="x", yref="y",
-                        line=dict(color="red", dash="dash", width=2)
-                    )
-                    figw.add_annotation(
-                        x=float(otp_target), y=-0.6,
-                        xref="x", yref="y",
-                        text=f"Target: {otp_target}%",
-                        showarrow=False,
-                        font=dict(size=12, color="red"),
-                        bgcolor="white"
-                    )
+                    if not grp.empty:
+                        worst = grp.nsmallest(5, 'Net_OTP').copy()
+                        worst['Net_OTP'] = worst['Net_OTP'].round(2)
 
-                    figw.update_layout(
-                        height=360,
-                        plot_bgcolor="white",
-                        margin=dict(l=10, r=40, t=20, b=40),
-                        xaxis=dict(title="Net OTP (%)", range=[0, 110], gridcolor=GRID, showgrid=True),
-                        yaxis=dict(title="", automargin=True)
-                    )
-                    st.plotly_chart(figw, use_container_width=True)
+                        figw = go.Figure()
+                        figw.add_trace(go.Bar(
+                            x=worst['Net_OTP'],
+                            y=worst['ACCT NM'],
+                            orientation='h',
+                            marker_color=NAVY,
+                            text=[f"{v:.2f}%" for v in worst['Net_OTP']],
+                            textposition='outside'
+                        ))
+
+                        # Target reference
+                        figw.add_shape(
+                            type="line",
+                            x0=float(otp_target), x1=float(otp_target),
+                            y0=-0.5, y1=len(worst)-0.5,
+                            xref="x", yref="y",
+                            line=dict(color="red", dash="dash", width=2)
+                        )
+                        figw.add_annotation(
+                            x=float(otp_target), y=-0.6,
+                            xref="x", yref="y",
+                            text=f"Target: {otp_target}%",
+                            showarrow=False,
+                            font=dict(size=12, color="red"),
+                            bgcolor="white"
+                        )
+
+                        figw.update_layout(
+                            height=360,
+                            plot_bgcolor="white",
+                            margin=dict(l=10, r=40, t=20, b=40),
+                            xaxis=dict(title="Net OTP (%)", range=[0, 110], gridcolor=GRID, showgrid=True),
+                            yaxis=dict(title="", automargin=True)
+                        )
+                        st.plotly_chart(figw, use_container_width=True)
+                    else:
+                        st.info(f"No non-null, >0% Net OTP accounts for August {latest_aug_year}.")
                 else:
-                    st.info(f"No non-null, >0% Net OTP accounts for August {latest_aug_year}.")
+                    st.info(f"No valid account names for August {latest_aug_year}.")
             else:
                 st.info("No August data available in the current dataset.")
         else:
             st.info("No rows with both POD and target available for account-level OTP in August.")
     else:
         st.info("Column 'ACCT NM' not found; cannot compute worst accounts.")
+
 
      
 
