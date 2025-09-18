@@ -777,6 +777,67 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
     else:
         st.info("Column 'ACCT NM' not found; cannot compute worst accounts.")
 
+        # ---------------- Audit: August slice integrity ----------------
+    with st.expander(f"🔎 Audit — August integrity checks ({tab_name})"):
+        try:
+            # Start from processed frame, same as chart logic
+            audit = processed_df.dropna(subset=['_pod', '_target']).copy()
+            audit['Month'] = audit['_pod'].dt.month
+            audit['Year']  = audit['_pod'].dt.year
+            aug_all = audit[audit['Month'] == 8]
+            if not aug_all.empty:
+                aug_year = int(aug_all['Year'].max())
+                aug_all = aug_all[aug_all['Year'] == aug_year].copy()
+
+                # Clean account names
+                aug_all['ACCT NM'] = aug_all['ACCT NM'].astype(str).str.strip()
+                aug_all = aug_all[aug_all['ACCT NM'].ne('')]
+
+                # Totals (all rows in August for this tab)
+                total_aug_rows = len(aug_all)
+                total_aug_accounts = aug_all['ACCT NM'].nunique()
+
+                # Per-account aggregation (same logic as chart)
+                grp_all = (aug_all.groupby('ACCT NM', as_index=False)
+                                  .agg(Net_OTP=('On_Time_Net', 'mean'),
+                                       Volume=('On_Time_Net', 'size')))
+                grp_all['Net_OTP'] = grp_all['Net_OTP'] * 100
+                grp_all_valid = grp_all[grp_all['Net_OTP'].notna() & (grp_all['Net_OTP'] > 0)]
+                sum_volume_accounts = int(grp_all_valid['Volume'].sum())
+
+                # Sanity checks
+                st.write(f"**Latest August year found:** {aug_year}")
+                st.write(f"**Rows (shipments) in August (this tab):** {total_aug_rows:,}")
+                st.write(f"**Unique accounts in August (this tab):** {total_aug_accounts:,}")
+                st.write(f"**Rows covered by valid accounts used in chart (Net OTP > 0):** {sum_volume_accounts:,}")
+
+                # If you kept the 'worst' dataframe name, show share of total
+                try:
+                    share = (sum_volume_accounts / total_aug_rows * 100) if total_aug_rows else 0
+                    st.write(f"**Coverage:** valid-account rows = {share:.2f}% of all August rows in this tab")
+                except Exception:
+                    pass
+
+                # Optional: per-sheet breakdown to prove we combined all sheets
+                if 'Source_Sheet' in aug_all.columns:
+                    by_sheet = (aug_all.groupby('Source_Sheet', as_index=False)
+                                      .agg(Rows=('ACCT NM','size'),
+                                           Accounts=('ACCT NM','nunique')))
+                    st.write("**August rows by source sheet (after filters):**")
+                    st.dataframe(by_sheet, use_container_width=True)
+
+                # Optional: top 10 accounts by volume in August for visibility
+                top10 = grp_all.sort_values('Volume', ascending=False).head(10).copy()
+                top10['Net_OTP'] = top10['Net_OTP'].round(2)
+                st.write("**Top 10 August accounts by volume (this tab):**")
+                st.dataframe(top10[['ACCT NM','Volume','Net_OTP']], use_container_width=True)
+
+            else:
+                st.info("No August rows found in this tab after filters.")
+        except Exception as e:
+            st.warning(f"Audit error: {e}")
+
+
 
      
 
