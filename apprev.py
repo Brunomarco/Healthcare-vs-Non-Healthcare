@@ -7,7 +7,7 @@ from datetime import datetime
 import plotly.express as px
 
 # ---------------- Page & Style ----------------
-st.set_page_config(page_title="Radiopharma OTP Dashboard", page_icon="📊",
+st.set_page_config(page_title="Healthcare vs Non-Healthcare Dashboard", page_icon="📊",
                    layout="wide", initial_sidebar_state="collapsed")
 
 # Define colors
