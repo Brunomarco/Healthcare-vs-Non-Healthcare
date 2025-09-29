@@ -131,7 +131,11 @@ def is_healthcare(account_name, sheet_name=None):
     """Determine if an account is healthcare-related."""
     if not account_name:
         return False
-    
+    EXCLUDE_FROM_HEALTHCARE = {"avid", "lantheus", "life"}  # accounts you want out of Healthcare
+    lower = str(account_name).strip().lower()
+    if any(excluded in lower for excluded in EXCLUDE_FROM_HEALTHCARE):
+        return False
+      
     # Special rules by sheet
     if sheet_name == 'AMS':
         return True  # AMS is always healthcare
