@@ -36,7 +36,7 @@ h2 {color:#0b1f44;font-weight:700;margin-top:1.2rem;margin-bottom:.6rem;}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Radiopharma OTP Dashboard")
+st.title("Healthcare & Non-Healthcare Dashboard")
 
 # ---------------- Config ----------------
 OTP_TARGET = 95
