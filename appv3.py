@@ -23,26 +23,25 @@ EMERALD = "#059669"
 st.markdown("""
 <style>
 .main {padding: 0rem 1rem;}
-h1 {color:#0b1f44;font-weight:800;letter-spacing:.2px;border-bottom:3px solid #1f77b4;padding-bottom:15px;margin-bottom:30px;}
-h2 {color:#0b1f44;font-weight:700;margin-top:2rem;margin-bottom:1rem;}
+h1 {color:#0b1f44;font-weight:800;letter-spacing:.2px;border-bottom:3px solid #1f77b4;padding-bottom:15px;margin-bottom:25px;}
+h2 {color:#0b1f44;font-weight:700;margin-top:1.8rem;margin-bottom:1rem;}
 h3 {color:#334155;font-weight:600;margin-top:1.5rem;margin-bottom:0.8rem;}
-.kpi {background:linear-gradient(to right, #ffffff, #f8f9fa);border:2px solid #e5e7eb;border-radius:16px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.05);transition:all 0.3s;}
-.kpi:hover {box-shadow:0 4px 12px rgba(0,0,0,0.1);transform:translateY(-2px);}
-.k-num {font-size:42px;font-weight:800;color:#0b1f44;line-height:1.1;}
-.k-cap {font-size:14px;color:#64748b;margin-top:6px;font-weight:500;}
+.kpi {background:linear-gradient(to right, #ffffff, #f8f9fa);border:2px solid #e5e7eb;border-radius:14px;padding:16px;box-shadow:0 2px 6px rgba(0,0,0,0.04);transition:all 0.3s;}
+.kpi:hover {box-shadow:0 4px 10px rgba(0,0,0,0.08);transform:translateY(-1px);}
+.k-num {font-size:32px;font-weight:700;color:#0b1f44;line-height:1.1;}
+.k-cap {font-size:13px;color:#64748b;margin-top:5px;font-weight:500;}
 .stTabs [data-baseweb="tab-list"] {gap: 12px;}
-.stTabs [data-baseweb="tab"] {height: 55px;padding-left: 30px;padding-right: 30px;background-color: #f1f5f9;border-radius: 12px 12px 0 0;font-weight:600;}
+.stTabs [data-baseweb="tab"] {height: 52px;padding-left: 28px;padding-right: 28px;background-color: #f1f5f9;border-radius: 10px 10px 0 0;font-weight:600;}
 .stTabs [aria-selected="true"] {background: linear-gradient(135deg, #0b1f44 0%, #1f77b4 100%);color: white;}
-.metric-card {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:16px;padding:25px;color:white;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
-.perf-table {border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);margin:20px 0;}
-.revenue-highlight {background: linear-gradient(135deg, #0b1f44 0%, #2563eb 100%);border-radius:20px;padding:35px;color:white;text-align:center;margin:35px 0;box-shadow:0 8px 20px rgba(11,31,68,0.2);}
-.revenue-num {font-size:52px;font-weight:900;color:white;line-height:1.0;text-shadow:2px 2px 4px rgba(0,0,0,0.2);}
-.revenue-label {font-size:18px;color:#e5e7eb;margin-top:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;}
-.dataframe {font-size:14px !important;}
-div[data-testid="column"] {padding: 0 15px;}
-.stPlotlyChart {margin: 25px 0;}
-div[data-testid="stExpander"] {margin: 20px 0;}
-.element-container {margin-bottom: 1.5rem;}
+.revenue-highlight {background: linear-gradient(135deg, #0b1f44 0%, #2563eb 100%);border-radius:12px;padding:20px;color:white;text-align:center;margin:15px 5px;box-shadow:0 4px 12px rgba(11,31,68,0.15);}
+.revenue-num {font-size:28px;font-weight:700;color:white;line-height:1.0;}
+.revenue-label {font-size:12px;color:#e5e7eb;margin-top:6px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px;}
+.perf-table {border-radius:10px;overflow:hidden;box-shadow:0 3px 8px rgba(0,0,0,0.06);margin:15px 0;}
+.dataframe {font-size:13px !important;}
+div[data-testid="column"] {padding: 0 12px;}
+.stPlotlyChart {margin: 20px 0;}
+div[data-testid="stExpander"] {margin: 15px 0;}
+.element-container {margin-bottom: 1.2rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -119,12 +118,6 @@ def _get_target_series(df: pd.DataFrame) -> pd.Series | None:
         return df["QDT"]
     return None
 
-def _kfmt(n: float) -> str:
-    if pd.isna(n): return ""
-    try: n = float(n)
-    except: return ""
-    return f"{n/1000:.1f}K" if n >= 1000 else f"{n:.0f}"
-
 def _format_number(n: float) -> str:
     """Format number with thousands separator and K suffix"""
     if pd.isna(n): return ""
@@ -143,15 +136,20 @@ def _revenue_fmt(n: float) -> str:
     if n >= 1000000:
         return f"${n/1000000:.2f}M"
     elif n >= 1000:
-        return f"${n/1000:.1f}K"
+        return f"${n/1000:,.1f}K"
     else:
-        return f"${n:.0f}"
+        return f"${n:,.0f}"
 
 def is_healthcare(account_name, sheet_name=None):
     """Determine if an account is healthcare-related."""
     if not account_name:
         return False
     
+    EXCLUDE_FROM_HEALTHCARE = {"avid", "lantheus", "life"}  # accounts you want out of Healthcare
+    lower = str(account_name).strip().lower()
+    if any(excluded in lower for excluded in EXCLUDE_FROM_HEALTHCARE):
+        return False
+      
     # Special rules by sheet
     if sheet_name == 'AMS':
         return True  # AMS is always healthcare
@@ -184,10 +182,10 @@ def make_semi_gauge(title: str, value: float) -> go.Figure:
         marker=dict(colors=[NAVY, "#d1d5db", "rgba(0,0,0,0)"])
     ))
     fig.add_annotation(text=f"{v:.2f}%", x=0.5, y=0.5, xref="paper", yref="paper",
-                       showarrow=False, font=dict(size=26, color=NAVY, family="Arial Black"))
+                       showarrow=False, font=dict(size=24, color=NAVY, family="Arial Black"))
     fig.add_annotation(text=title, x=0.5, y=1.18, xref="paper", yref="paper",
-                       showarrow=False, font=dict(size=14, color=SLATE))
-    fig.update_layout(margin=dict(l=10, r=10, t=36, b=0), height=180)
+                       showarrow=False, font=dict(size=13, color=SLATE))
+    fig.update_layout(margin=dict(l=10, r=10, t=32, b=0), height=160)
     return fig
 
 def analyze_monthly_changes(df: pd.DataFrame, metric: str = 'TOTAL CHARGES'):
@@ -237,7 +235,7 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
         return
     
     st.markdown(f"### 📈 {sector} Performance Metrics - {month}")
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
     
     # Revenue Performance Section
     st.markdown("#### 💼 **Revenue Performance Analysis**")
@@ -263,7 +261,7 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
             )
             
             display_df = top_revenue[['Account', 'Previous', 'Current', 'Change', 'Change %']].head(10)
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+            st.dataframe(display_df, use_container_width=True, hide_index=True, height=380)
     
     with col2:
         # Worst 10 Revenue Decreases
@@ -283,9 +281,9 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
             )
             
             display_df = worst_revenue[['Account', 'Previous', 'Current', 'Change', 'Change %']].head(10)
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+            st.dataframe(display_df, use_container_width=True, hide_index=True, height=380)
     
-    st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:25px'></div>", unsafe_allow_html=True)
     
     # Volume Performance Section
     st.markdown("#### 📦 **Volume Performance Analysis**")
@@ -309,7 +307,7 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
             )
             
             display_df = top_volume[['Account', 'Previous', 'Current', 'Change', 'Change %']].head(10)
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+            st.dataframe(display_df, use_container_width=True, hide_index=True, height=380)
         
         with col4:
             worst_volume = volume_data.nsmallest(10, 'Volume_Change')[
@@ -325,9 +323,9 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
             )
             
             display_df = worst_volume[['Account', 'Previous', 'Current', 'Change', 'Change %']].head(10)
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+            st.dataframe(display_df, use_container_width=True, hide_index=True, height=380)
     
-    st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:25px'></div>", unsafe_allow_html=True)
     
     # Pieces Performance Section
     st.markdown("#### 📊 **Pieces Performance Analysis**")
@@ -351,7 +349,7 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
             )
             
             display_df = top_pieces[['Account', 'Previous', 'Current', 'Change', 'Change %']].head(10)
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+            st.dataframe(display_df, use_container_width=True, hide_index=True, height=380)
         
         with col6:
             worst_pieces = pieces_data.nsmallest(10, 'Pieces_Change')[
@@ -367,7 +365,7 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
             )
             
             display_df = worst_pieces[['Account', 'Previous', 'Current', 'Change', 'Change %']].head(10)
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+            st.dataframe(display_df, use_container_width=True, hide_index=True, height=380)
 
 # ---------------- IO ----------------
 @st.cache_data(show_spinner=False)
@@ -402,7 +400,9 @@ def read_and_combine_sheets(uploaded):
                 
                 # Clean and standardize PU CTRY
                 if 'PU CTRY' in df_sheet.columns:
+                    # Remove any trailing spaces and convert to uppercase for comparison
                     df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
+                    # Filter EMEA countries
                     df_sheet_emea = df_sheet[df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)]
                 else:
                     df_sheet_emea = df_sheet
@@ -450,6 +450,7 @@ def read_and_combine_sheets(uploaded):
         non_healthcare_df = pd.DataFrame()
         
         if not combined_df.empty and 'ACCT NM' in combined_df.columns:
+            # Apply healthcare classification with sheet context
             combined_df['Is_Healthcare'] = combined_df.apply(
                 lambda row: is_healthcare(row.get('ACCT NM', ''), row.get('Source_Sheet', '')), axis=1
             )
@@ -482,12 +483,13 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     
     d = df.copy()
     
-    # Parse POD dates
+    # Parse POD dates - this is critical for monthly grouping
     if 'POD DATE/TIME' in d.columns:
         d["_pod"] = _excel_to_dt(d["POD DATE/TIME"])
+        # Log how many valid POD dates we have
         valid_pods = d["_pod"].notna().sum()
         total_rows = len(d)
-        if valid_pods < total_rows * 0.5:
+        if valid_pods < total_rows * 0.5:  # If less than 50% have valid POD
             st.warning(f"Only {valid_pods} out of {total_rows} rows have valid POD dates")
     else:
         d["_pod"] = pd.NaT
@@ -497,10 +499,11 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     target_raw = _get_target_series(d)
     d["_target"] = _excel_to_dt(target_raw) if target_raw is not None else pd.NaT
 
-    # Create month keys from POD
-    d["Month_YYYY_MM"] = d["_pod"].dt.to_period("M").astype(str)
+    # Create month keys from POD - THIS IS THE KEY GROUPING
+    # Each POD date gets grouped into its month
+    d["Month_YYYY_MM"] = d["_pod"].dt.to_period("M").astype(str)  # e.g., '2025-01'
     d["Month_Sort"] = pd.to_datetime(d["Month_YYYY_MM"] + "-01", errors='coerce')
-    d["Month_Display"] = d["Month_Sort"].dt.strftime("%b %Y")
+    d["Month_Display"] = d["Month_Sort"].dt.strftime("%b %Y")  # e.g., 'Jan 2025'
 
     # Controllable flag (QC NAME)
     if "QC NAME" in d.columns:
@@ -560,6 +563,7 @@ def monthly_frames(d: pd.DataFrame):
     if base_otp.empty:
         otp = pd.DataFrame(columns=["Month_YYYY_MM","Month_Display","Month_Sort","Gross_OTP","Net_OTP"])
     else:
+        # Group by POD month for OTP calculations
         otp = (base_otp.groupby(["Month_YYYY_MM","Month_Display","Month_Sort"], as_index=False)
                       .agg(Gross_On=("On_Time_Gross","sum"),
                            Gross_Tot=("On_Time_Gross","count"),
@@ -605,21 +609,49 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
         st.error(f"No {tab_name} data to display after processing.")
         return
     
+    # Debug: Show monthly grouping details
+    if debug_mode:
+        with st.expander(f"🔍 Debug: {tab_name} Monthly Grouping"):
+            pod_dates = processed_df.dropna(subset=["_pod"])
+            if not pod_dates.empty:
+                st.write(f"**Total rows processed:** {len(processed_df):,}")
+                st.write(f"**Rows with valid POD dates:** {len(pod_dates):,}")
+                
+                # Show source sheet contribution
+                if 'Source_Sheet' in pod_dates.columns:
+                    st.write("\n**POD rows by source sheet:**")
+                    source_counts = pod_dates['Source_Sheet'].value_counts()
+                    for sheet, count in source_counts.items():
+                        st.write(f"   {sheet}: {count:,} rows")
+                
+                # Monthly breakdown
+                month_counts = pod_dates.groupby('Month_Display').size().sort_index()
+                st.write("\n**Entries per month:**")
+                st.dataframe(month_counts)
+                
+                # Total volume check
+                st.write(f"\n**Total volume (sum of all months):** {month_counts.sum():,}")
+                st.write(f"**Should equal rows with POD:** {len(pod_dates):,}")
+                if month_counts.sum() == len(pod_dates):
+                    st.success("✅ Monthly volumes add up correctly!")
+                else:
+                    st.error("❌ Monthly volume mismatch!")
+    
     vol_pod, pieces_pod, otp_pod, revenue_pod = monthly_frames(processed_df)
     gross_otp, net_otp, volume_total, exceptions, controllables, uncontrollables, total_revenue = calc_summary(processed_df)
     
-    # ----------------  Monthly Revenue Display (PROMINENT) ----------------
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    # ----------------  Monthly Revenue Display (COMPACT) ----------------
+    st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
     
     if not revenue_pod.empty:
-        # Create monthly revenue display with highlighting
+        # Create monthly revenue display with smaller highlighting
         st.markdown(f"### 💰 {tab_name} Monthly Revenue Overview")
-        st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
         
         # Display monthly revenues in a grid
         months_data = revenue_pod.sort_values('Month_Sort')
         num_months = len(months_data)
-        cols_per_row = min(4, num_months)
+        cols_per_row = min(6, num_months)  # Increased to 6 columns for more compact display
         
         for i in range(0, num_months, cols_per_row):
             cols = st.columns(cols_per_row)
@@ -634,22 +666,22 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                         </div>
                         ''', unsafe_allow_html=True)
     
-    st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
     
-    # ---------------- KPIs & Gauges ----------------
+    # ---------------- KPIs & Gauges (COMPACT) ----------------
     st.markdown(f"### 📊 {tab_name} Key Performance Indicators")
-    st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
     
     left, right = st.columns([1, 1.5])
     with left:
         st.markdown(f'<div class="kpi"><div class="k-num">{volume_total:,}</div><div class="k-cap">Total Volume (POD Entries)</div></div>', unsafe_allow_html=True)
-        st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
         st.markdown(f'<div class="kpi"><div class="k-num">{_revenue_fmt(total_revenue)}</div><div class="k-cap">Total Revenue</div></div>', unsafe_allow_html=True)
-        st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
         st.markdown(f'<div class="kpi"><div class="k-num">{exceptions:,}</div><div class="k-cap">Total Exceptions</div></div>', unsafe_allow_html=True)
-        st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
         st.markdown(f'<div class="kpi"><div class="k-num">{controllables:,}</div><div class="k-cap">Controllable Exceptions</div></div>', unsafe_allow_html=True)
-        st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
         st.markdown(f'<div class="kpi"><div class="k-num">{uncontrollables:,}</div><div class="k-cap">Uncontrollable Exceptions</div></div>', unsafe_allow_html=True)
 
     with right:
@@ -665,11 +697,11 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             st.plotly_chart(make_semi_gauge("Raw OTP", gross_otp),
                            use_container_width=True, config={"displayModeBar": False})
 
-    st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
 
-    # ---------------- Chart: Net OTP by Volume with improved spacing ----------------
+    # ---------------- Chart: Net OTP by Volume with improved spacing (FULL WIDTH) ----------------
     st.markdown(f"### 📈 {tab_name}: Controllable (Net) OTP by Volume — POD Month")
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
     
     if not vol_pod.empty and not otp_pod.empty:
         mv = vol_pod.merge(otp_pod[["Month_YYYY_MM","Net_OTP"]],
@@ -685,7 +717,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             marker_color=NAVY,
             text=[_format_number(v) for v in y_vol],
             textposition="inside",
-            textfont=dict(size=16, color="white", family="Arial Black"),
+            textfont=dict(size=14, color="white", family="Arial Black"),
             textangle=0,
             yaxis="y",
             insidetextanchor="start"
@@ -696,7 +728,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             x=x, y=y_net, name="Net OTP",
             mode="lines+markers", 
             line=dict(color=GOLD, width=4),
-            marker=dict(size=12, color=GOLD),
+            marker=dict(size=10, color=GOLD),
             yaxis="y2"
         ))
         
@@ -708,11 +740,11 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                     text=f"<b>{yi:.2f}%</b>",
                     showarrow=False,
                     yshift=25,
-                    font=dict(size=14, color="#111827", family="Arial Black"),
+                    font=dict(size=13, color="#111827", family="Arial Black"),
                     bgcolor="rgba(255,255,255,0.95)",
                     bordercolor=GOLD,
                     borderwidth=2,
-                    borderpad=6
+                    borderpad=5
                 )
         
         # Target line
@@ -720,7 +752,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             type="line", x0=-0.5, x1=len(x)-0.5,
             y0=float(otp_target), y1=float(otp_target),
             xref="x", yref="y2", 
-            line=dict(color="red", dash="dash", width=3)
+            line=dict(color="red", dash="dash", width=2)
         )
         
         # Add target label
@@ -730,32 +762,32 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             text=f"<b>Target: {otp_target}%</b>",
             showarrow=False,
             xshift=-60,
-            font=dict(size=14, color="red", family="Arial"),
+            font=dict(size=12, color="red", family="Arial"),
             bgcolor="rgba(255,255,255,0.95)",
             bordercolor="red",
             borderwidth=1
         )
         
         fig.update_layout(
-            height=600, 
+            height=550, 
             hovermode="x unified", 
             plot_bgcolor="white",
-            margin=dict(l=60, r=60, t=60, b=100),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0, font=dict(size=14)),
-            xaxis=dict(title="", tickangle=-30, tickfont=dict(size=13), automargin=True),
-            yaxis=dict(title="Volume (Rows)", titlefont=dict(size=16), tickfont=dict(size=13), gridcolor=GRID, showgrid=True),
-            yaxis2=dict(title="Net OTP (%)", titlefont=dict(size=16), tickfont=dict(size=13), overlaying="y", side="right", range=[0, 120], showgrid=False),
+            margin=dict(l=50, r=50, t=50, b=90),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0, font=dict(size=13)),
+            xaxis=dict(title="", tickangle=-30, tickfont=dict(size=12), automargin=True),
+            yaxis=dict(title="Volume (Rows)", titlefont=dict(size=14), tickfont=dict(size=12), gridcolor=GRID, showgrid=True),
+            yaxis2=dict(title="Net OTP (%)", titlefont=dict(size=14), tickfont=dict(size=12), overlaying="y", side="right", range=[0, 120], showgrid=False),
             barmode="overlay"
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No monthly volume data available.")
 
-    st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
 
-    # ---------------- Chart: Gross vs Net OTP with improved positioning ----------------
+    # ---------------- Chart: Gross vs Net OTP with improved positioning (FULL WIDTH) ----------------
     st.markdown(f"### 📊 {tab_name}: Monthly OTP Trend (Gross vs Net) — POD Month")
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
     
     if not otp_pod.empty:
         otp_sorted = otp_pod.sort_values("Month_Sort")
@@ -777,7 +809,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                     text=f"<b>{yi:.2f}%</b>",
                     showarrow=False,
                     yshift=25,
-                    font=dict(size=13, color=GREEN, family="Arial Black"),
+                    font=dict(size=12, color=GREEN, family="Arial Black"),
                     bgcolor="rgba(255,255,255,0.95)",
                     bordercolor=GREEN,
                     borderwidth=1
@@ -791,7 +823,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                     text=f"<b>{yi:.2f}%</b>",
                     showarrow=False,
                     yshift=-25,
-                    font=dict(size=13, color=BLUE, family="Arial Black"),
+                    font=dict(size=12, color=BLUE, family="Arial Black"),
                     bgcolor="rgba(255,255,255,0.95)",
                     bordercolor=BLUE,
                     borderwidth=1
@@ -802,7 +834,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             type="line", x0=-0.5, x1=len(x)-0.5,
             y0=float(otp_target), y1=float(otp_target),
             xref="x", yref="y",
-            line=dict(color="red", dash="dash", width=3)
+            line=dict(color="red", dash="dash", width=2)
         )
         
         # Add target label
@@ -812,31 +844,31 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             text=f"<b>Target: {otp_target}%</b>",
             showarrow=False,
             xshift=-60,
-            font=dict(size=14, color="red", family="Arial"),
+            font=dict(size=12, color="red", family="Arial"),
             bgcolor="rgba(255,255,255,0.95)",
             bordercolor="red",
             borderwidth=1
         )
         
         fig2.update_layout(
-            height=600,
+            height=550,
             hovermode="x unified",
             plot_bgcolor="white",
-            margin=dict(l=60, r=60, t=60, b=100),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0, font=dict(size=14)),
-            xaxis=dict(title="", tickangle=-30, tickfont=dict(size=13), automargin=True),
-            yaxis=dict(title="OTP (%)", titlefont=dict(size=16), tickfont=dict(size=13), range=[0, 120], gridcolor=GRID, showgrid=True)
+            margin=dict(l=50, r=50, t=50, b=90),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0, font=dict(size=13)),
+            xaxis=dict(title="", tickangle=-30, tickfont=dict(size=12), automargin=True),
+            yaxis=dict(title="OTP (%)", titlefont=dict(size=14), tickfont=dict(size=12), range=[0, 120], gridcolor=GRID, showgrid=True)
         )
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("No monthly OTP trend available.")
 
-    st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
 
     # ---------------- Month-over-Month Performance Analysis ----------------
     st.markdown("---")
     st.markdown(f"### 📊 {tab_name}: Month-over-Month Performance Analysis")
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
     
     if 'TOTAL CHARGES' in processed_df.columns and 'ACCT NM' in processed_df.columns:
         monthly_changes = analyze_monthly_changes(processed_df)
@@ -853,15 +885,15 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                 key=f"{tab_name}_month_select"
             )
             
-            st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
             
             if selected_month:
                 create_performance_tables(monthly_changes, selected_month, tab_name)
             
             # Revenue Trend visualization
-            st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
             st.markdown(f"### 💼 {tab_name}: Revenue Trend by Top Accounts")
-            st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:15px'></div>", unsafe_allow_html=True)
             
             # Get top 10 accounts by total revenue
             top_accounts_revenue = (processed_df.groupby('ACCT NM')['TOTAL CHARGES']
@@ -882,20 +914,20 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                             x=account_data['Month'],
                             y=account_data['Revenue'],
                             mode='lines+markers',
-                            name=account[:40],  # Truncate long names
+                            name=account[:35],  # Truncate long names
                             line=dict(width=3),
-                            marker=dict(size=8)
+                            marker=dict(size=7)
                         ))
                 
                 fig_trend.update_layout(
                     title="",
-                    height=550,
+                    height=500,
                     hovermode="x unified",
                     plot_bgcolor="white",
-                    margin=dict(l=60, r=150, t=40, b=80),
-                    legend=dict(orientation="v", yanchor="top", y=1, x=1.02, font=dict(size=12)),
-                    xaxis=dict(title="Month", titlefont=dict(size=14), tickangle=-30, tickfont=dict(size=12)),
-                    yaxis=dict(title="Revenue ($)", titlefont=dict(size=14), tickfont=dict(size=12), gridcolor=GRID, showgrid=True)
+                    margin=dict(l=50, r=140, t=30, b=70),
+                    legend=dict(orientation="v", yanchor="top", y=1, x=1.02, font=dict(size=11)),
+                    xaxis=dict(title="Month", titlefont=dict(size=13), tickangle=-30, tickfont=dict(size=11)),
+                    yaxis=dict(title="Revenue ($)", titlefont=dict(size=13), tickfont=dict(size=11), gridcolor=GRID, showgrid=True)
                 )
                 st.plotly_chart(fig_trend, use_container_width=True)
         else:
@@ -903,85 +935,4 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
     else:
         st.info(f"Revenue data not available for {tab_name} performance analysis")
 
-    st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
-
-# ---------------- Main Application ----------------
-# Sidebar
-with st.sidebar:
-    st.markdown("### 📁 Data Upload")
-    uploaded_file = st.file_uploader("Upload Excel (.xlsx) file", type=["xlsx"])
-    
-    st.markdown("### ⚙️ Settings")
-    otp_target = st.number_input("OTP Target (%)", min_value=0, max_value=100, value=OTP_TARGET, step=1)
-    
-    # Debug mode checkbox
-    debug_mode = st.checkbox("Show Debug Information", value=False)
-    
-    st.markdown("---")
-    st.markdown("### 📊 About this Dashboard")
-    st.markdown("""
-    This dashboard analyzes On-Time Performance (OTP) for:
-    - **Healthcare**: Medical, pharmaceutical, and life science companies
-    - **Non-Healthcare**: Aviation, logistics, and other industries
-    
-    **Data Scope:**
-    - EMEA countries only
-    - STATUS = 440-BILLED
-    - Month grouping by POD DATE/TIME
-    
-    **Features:**
-    - Monthly revenue displays
-    - Month-over-month performance analysis
-    - Top/worst performers by revenue, volume, and pieces
-    - Revenue trend visualization
-    - Professional formatting for executive presentations
-    """)
-
-if not uploaded_file:
-    st.info("""
-    👆 **Please upload your Excel file to begin.**
-    
-    **Expected file structure:**
-    - Multiple sheets (Aviation SVC, MNX Charter, AMS, LDN, Americas International Desk)
-    - Required columns: PU CTRY, STATUS, POD DATE/TIME, ACCT NM
-    - Optional columns: UPD DEL, QDT, QC NAME, PIECES, TOTAL CHARGES
-    
-    **Data processing:**
-    - Filters for EMEA countries only
-    - Filters for STATUS = 440-BILLED
-    - Categorizes accounts as Healthcare or Non-Healthcare
-    - Calculates OTP metrics by POD month
-    - Analyzes month-over-month performance changes
-    """)
-    st.stop()
-
-# Process uploaded file
-with st.spinner("Processing Excel file..."):
-    healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
-
-# Show processing statistics
-with st.expander("📈 Data Processing Statistics"):
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Rows", f"{stats.get('total_rows', 0):,}")
-    with col2:
-        st.metric("EMEA Rows", f"{stats.get('emea_rows', 0):,}")
-    with col3:
-        st.metric("440-BILLED", f"{stats.get('status_filtered', 0):,}")
-    with col4:
-        st.metric("HC / Non-HC", f"{stats.get('healthcare_rows', 0):,} / {stats.get('non_healthcare_rows', 0):,}")
-
-# Create tabs
-tab1, tab2 = st.tabs(["🏥 Healthcare", "✈️ Non-Healthcare"])
-
-with tab1:
-    st.markdown("## Healthcare Sector Analysis")
-    if not healthcare_df.empty:
-        st.markdown(f"**Total Healthcare Entries:** {len(healthcare_df):,}")
-    create_dashboard_view(healthcare_df, "Healthcare", otp_target, debug_mode)
-
-with tab2:
-    st.markdown("## Non-Healthcare Sector Analysis")
-    if not non_healthcare_df.empty:
-        st.markdown(f"**Total Non-Healthcare Entries:** {len(non_healthcare_df):,}")
-    create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
+    st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
