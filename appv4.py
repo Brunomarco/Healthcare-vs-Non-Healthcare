@@ -402,8 +402,9 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
             hide_index=True,
             height=400
         )
-# ---------------- NEW: Monthly Revenue Bar Chart ----------------
-    st.markdown("---")
+st.markdown("---")
+
+    # ---------------- Monthly Revenue Bar Chart ----------------
     st.subheader(f"💰 {tab_name}: Monthly Revenue Overview")
     
     if not revenue_pod.empty:
