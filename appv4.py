@@ -482,10 +482,10 @@ if not revenue_pod.empty:
         )
         
         st.plotly_chart(fig_rev, use_container_width=True)
-    else:
-        st.info(f"No monthly revenue data available for {tab_name}")
+else:
+    st.info(f"No monthly revenue data available for {tab_name}")
 
-    st.markdown("---")
+st.markdown("---")
 
 # ---------------- IO ----------------
 @st.cache_data(show_spinner=False)
