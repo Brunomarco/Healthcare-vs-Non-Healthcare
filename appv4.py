@@ -405,9 +405,7 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
 st.markdown("---")
 
     # ---------------- Monthly Revenue Bar Chart ----------------
-    st.subheader(f"💰 {tab_name}: Monthly Revenue Overview")
-    
-    if not revenue_pod.empty:
+if not revenue_pod.empty:
         revenue_sorted = revenue_pod.sort_values("Month_Sort")
         x = revenue_sorted["Month_Display"].tolist()
         y_revenue = revenue_sorted["Revenue"].astype(float).tolist()
