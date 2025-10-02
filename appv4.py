@@ -404,89 +404,6 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
         )
 st.markdown("---")
 
-    # ---------------- Monthly Revenue Bar Chart ----------------
-if not revenue_pod.empty:
-        revenue_sorted = revenue_pod.sort_values("Month_Sort")
-        x = revenue_sorted["Month_Display"].tolist()
-        y_revenue = revenue_sorted["Revenue"].astype(float).tolist()
-        
-        fig_rev = go.Figure()
-        
-        # Bar chart for monthly revenue
-        fig_rev.add_trace(go.Bar(
-            x=x,
-            y=y_revenue,
-            name="Monthly Revenue",
-            marker_color=NAVY,
-            text=[_revenue_fmt(v) for v in y_revenue],
-            textposition="outside",
-            textfont=dict(size=12, color=NAVY, family="Arial Black"),
-            hovertemplate="<b>%{x}</b><br>Revenue: %{text}<extra></extra>"
-        ))
-        
-        # Calculate and show average line
-        avg_revenue = np.mean(y_revenue)
-        fig_rev.add_shape(
-            type="line",
-            x0=-0.5, x1=len(x)-0.5,
-            y0=avg_revenue, y1=avg_revenue,
-            xref="x", yref="y",
-            line=dict(color=GOLD, dash="dash", width=2)
-        )
-        
-        fig_rev.add_annotation(
-            x=len(x)-0.5, y=avg_revenue,
-            xref="x", yref="y",
-            text=f"Avg: {_revenue_fmt(avg_revenue)}",
-            showarrow=False,
-            xshift=-60,
-            font=dict(size=11, color=GOLD),
-            bgcolor="white",
-            bordercolor=GOLD,
-            borderwidth=1
-        )
-        
-        # Add total revenue annotation
-        total_rev = sum(y_revenue)
-        fig_rev.add_annotation(
-            x=0.5, y=1.05,
-            xref="paper", yref="paper",
-            text=f"<b>Total Revenue: {_revenue_fmt(total_rev)}</b>",
-            showarrow=False,
-            font=dict(size=14, color=NAVY),
-            bgcolor="rgba(240, 180, 41, 0.1)",
-            bordercolor=GOLD,
-            borderwidth=2,
-            borderpad=8
-        )
-        
-        fig_rev.update_layout(
-            height=500,
-            plot_bgcolor="white",
-            margin=dict(l=60, r=60, t=80, b=100),
-            xaxis=dict(
-                title="Month",
-                tickangle=-30,
-                tickfont=dict(size=11),
-                automargin=True
-            ),
-            yaxis=dict(
-                title="Revenue ($)",
-                titlefont=dict(size=13),
-                tickfont=dict(size=11),
-                gridcolor=GRID,
-                showgrid=True,
-                rangemode="tozero"
-            ),
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig_rev, use_container_width=True)
-else:
-    st.info(f"No monthly revenue data available for {tab_name}")
-
-st.markdown("---")
-
 # ---------------- IO ----------------
 @st.cache_data(show_spinner=False)
 def read_and_combine_sheets(uploaded):
@@ -759,6 +676,89 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
     
     vol_pod, pieces_pod, otp_pod, revenue_pod = monthly_frames(processed_df)
     gross_otp, net_otp, volume_total, exceptions, controllables, uncontrollables, total_revenue = calc_summary(processed_df)
+
+        # ---------------- Monthly Revenue Bar Chart ----------------
+    if not revenue_pod.empty:
+            revenue_sorted = revenue_pod.sort_values("Month_Sort")
+            x = revenue_sorted["Month_Display"].tolist()
+            y_revenue = revenue_sorted["Revenue"].astype(float).tolist()
+            
+            fig_rev = go.Figure()
+            
+            # Bar chart for monthly revenue
+            fig_rev.add_trace(go.Bar(
+                x=x,
+                y=y_revenue,
+                name="Monthly Revenue",
+                marker_color=NAVY,
+                text=[_revenue_fmt(v) for v in y_revenue],
+                textposition="outside",
+                textfont=dict(size=12, color=NAVY, family="Arial Black"),
+                hovertemplate="<b>%{x}</b><br>Revenue: %{text}<extra></extra>"
+            ))
+            
+            # Calculate and show average line
+            avg_revenue = np.mean(y_revenue)
+            fig_rev.add_shape(
+                type="line",
+                x0=-0.5, x1=len(x)-0.5,
+                y0=avg_revenue, y1=avg_revenue,
+                xref="x", yref="y",
+                line=dict(color=GOLD, dash="dash", width=2)
+            )
+            
+            fig_rev.add_annotation(
+                x=len(x)-0.5, y=avg_revenue,
+                xref="x", yref="y",
+                text=f"Avg: {_revenue_fmt(avg_revenue)}",
+                showarrow=False,
+                xshift=-60,
+                font=dict(size=11, color=GOLD),
+                bgcolor="white",
+                bordercolor=GOLD,
+                borderwidth=1
+            )
+            
+            # Add total revenue annotation
+            total_rev = sum(y_revenue)
+            fig_rev.add_annotation(
+                x=0.5, y=1.05,
+                xref="paper", yref="paper",
+                text=f"<b>Total Revenue: {_revenue_fmt(total_rev)}</b>",
+                showarrow=False,
+                font=dict(size=14, color=NAVY),
+                bgcolor="rgba(240, 180, 41, 0.1)",
+                bordercolor=GOLD,
+                borderwidth=2,
+                borderpad=8
+            )
+            
+            fig_rev.update_layout(
+                height=500,
+                plot_bgcolor="white",
+                margin=dict(l=60, r=60, t=80, b=100),
+                xaxis=dict(
+                    title="Month",
+                    tickangle=-30,
+                    tickfont=dict(size=11),
+                    automargin=True
+                ),
+                yaxis=dict(
+                    title="Revenue ($)",
+                    titlefont=dict(size=13),
+                    tickfont=dict(size=11),
+                    gridcolor=GRID,
+                    showgrid=True,
+                    rangemode="tozero"
+                ),
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_rev, use_container_width=True)
+    else:
+        st.info(f"No monthly revenue data available for {tab_name}")
+    
+    st.markdown("---")
     
     # ---------------- KPIs & Gauges ----------------
     left, right = st.columns([1, 1.5])
