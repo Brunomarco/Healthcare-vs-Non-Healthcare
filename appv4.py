@@ -770,8 +770,9 @@ if not uploaded_file:
     st.stop()
 
 # Process uploaded file
-with st.spinner("Processing Excel file..."):
-    healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
+if uploaded_file:
+    with st.spinner("Processing Excel file..."):
+        healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
 
 # Detailed validation info
 if debug_mode:
