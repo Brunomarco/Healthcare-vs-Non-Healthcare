@@ -1,294 +1,4 @@
-st.markdown("---")
-
-    # ---------------- Dynamic Worst Accounts by Month ----------------
-    st.subheader(f"{tab_name}: 5 Worst Accounts by Net OTP")
-    
-    if 'ACCT NM' in processed_df.columns:
-        base = processed_df.dropna(subset=['_pod', '_target']).copy()
-        if not base.empty:
-            # Get unique months for selection
-            base['Month_Year'] = base['_pod'].dt.to_period('M')
-            unique_periods = sorted(base['Month_Year'].unique())
-            
-            if unique_periods:
-                # Create month selector
-                selected_period = st.selectbox(
-                    f"Select month for worst accounts analysis ({tab_name}):",
-                    options=unique_periods,
-                    format_func=lambda x: x.strftime('%B %Y'),
-                    index=len(unique_periods)-1,  # Default to most recent
-                    key=f"{tab_name}_worst_month_select"
-                )
-                
-                # Filter for selected month
-                month_df = base[base['Month_Year'] == selected_period]
-                
-                if not month_df.empty:
-                    # Clean account names
-                    month_df['ACCT NM'] = month_df['ACCT NM'].astype(str).str.strip()
-                    month_df = month_df[month_df['ACCT NM'].ne('')]
-                    
-                    if not month_df.empty:
-                        # Net OTP (% as mean of boolean) + Volume (count of rows) for selected month
-                        grp = (month_df.groupby('ACCT NM', as_index=False)
-                                      .agg(Net_OTP=('On_Time_Net', 'mean'),
-                                           Volume=('On_Time_Net', 'size')))
-                        grp['Net_OTP'] = grp['Net_OTP'] * 100
-                        
-                        # Exclude NaN and 0% Net OTP
-                        grp = grp[grp['Net_OTP'].notna() & (grp['Net_OTP'] > 0)]
-                        
-                        if not grp.empty:
-                            worst = grp.nsmallest(5, 'Net_OTP').copy()
-                            worst['Net_OTP'] = worst['Net_OTP'].round(2)
-                            
-                            # Bar chart with Net OTP and Volume in labels + hover
-                            figw = go.Figure()
-                            figw.add_trace(go.Bar(
-                                x=worst['Net_OTP'],
-                                y=worst['ACCT NM'],
-                                orientation='h',
-                                marker_color=NAVY,
-                                text=[f"{otp:.2f}%  •  Vol {int(v)}" for otp, v in zip(worst['Net_OTP'], worst['Volume'])],
-                                textposition='outside',
-                                hovertemplate="<b>%{y}</b><br>Net OTP: %{x:.2f}%<br>Volume: %{customdata} rows<extra></extra>",
-                                customdata=worst['Volume']
-                            ))
-                            
-                            # Target reference
-                            figw.add_shape(
-                                type="line",
-                                x0=float(otp_target), x1=float(otp_target),
-                                y0=-0.5, y1=len(worst)-0.5,
-                                xref="x", yref="y",
-                                line=dict(color="red", dash="dash", width=2)
-                            )
-                            figw.add_annotation(
-                                x=float(otp_target), y=-0.6,
-                                xref="x", yref="y",
-                                text=f"Target: {otp_target}%",
-                                showarrow=False,
-                                font=dict(size=12, color="red"),
-                                bgcolor="white"
-                            )
-                            
-                            figw.update_layout(
-                                title_text=f"{selected_period.strftime('%B %Y')} — Worst 5 by Net OTP (with Volume)",
-                                height=380,
-                                plot_bgcolor="white",
-                                margin=dict(l=10, r=40, t=40, b=40),
-                                xaxis=dict(title="Net OTP (%)", range=[0, 110], gridcolor=GRID, showgrid=True),
-                                yaxis=dict(title="", automargin=True)
-                            )
-                            st.plotly_chart(figw, use_container_width=True)
-                            
-                            # Compact table below for auditing
-                            st.caption(f"Worst 5 accounts — {selected_period.strftime('%B %Y')} (Net OTP and Volume)")
-                            st.dataframe(
-                                worst[['ACCT NM', 'Net_OTP', 'Volume']].rename(
-                                    columns={'ACCT NM':'Account', 'Net_OTP':'Net OTP (%)'}
-                                ),
-                                use_container_width=True
-                            )
-                        else:
-                            st.info(f"No non-null, >0% Net OTP accounts for {selected_period.strftime('%B %Y')}.")
-                    else:
-                        st.info(f"No valid account names for {selected_period.strftime('%B %Y')}.")
-                else:
-                    st.info(f"No data available for {selected_period.strftime('%B %Y')}.")
-            else:
-                st.info("No data with both POD and target available.")
-        else:
-            st.info("No rows with both POD and target available for account-level OTP.")
-    else:
-        st.info("Column 'ACCT NM' not found; cannot compute worst accounts.")
-
-    # ---------------- Optional QC breakdown ----------------
-    if "QC_NAME_CLEAN" in processed_df.columns or "QC NAME" in processed_df.columns:
-        qc_src = processed_df.copy()
-        if "QC_NAME_CLEAN" not in qc_src.columns and "QC NAME" in qc_src.columns:
-            qc_src["QC_NAME_CLEAN"] = qc_src["QC NAME"].astype(str)
-        qc_src["Control_Type"] = qc_src["QC_NAME_CLEAN"].str.contains(CTRL_REGEX, na=False).map({True:"Controllable", False:"Non-Controllable"})
-        qc_tbl = (qc_src.groupby(["Control_Type","QC_NAME_CLEAN"], dropna=False)
-                        .size().reset_index(name="Count")
-                        .sort_values(["Control_Type","Count"], ascending=[True, False]))
-        with st.expander(f"{tab_name}: QC NAME breakdown (controllable vs non-controllable)"):
-            st.dataframe(qc_tbl, use_container_width=True)
-
-# ---------------- Main Application ----------------
-# Sidebar
-with st.sidebar:
-    st.markdown("### 📁 Data Upload")
-    uploaded_file = st.file_uploader("Upload Excel (.xlsx) file", type=["xlsx"])
-    
-    st.markdown("### ⚙️ Settings")
-    otp_target = st.number_input("OTP Target (%)", min_value=0, max_value=100, value=OTP_TARGET, step=1)
-    
-    # Debug mode checkbox
-    debug_mode = st.checkbox("Show Debug Information", value=False)
-    
-    st.markdown("---")
-    st.markdown("### 📊 About this Dashboard")
-    st.markdown("""
-    This dashboard analyzes On-Time Performance (OTP) for:
-    - **Healthcare**: Medical, pharmaceutical, and life science companies
-    - **Non-Healthcare**: Aviation, logistics, and other industries
-    
-    **Data Scope:**
-    - EMEA countries only
-    - STATUS = 440-BILLED
-    - Month grouping by POD DATE/TIME
-    
-    **New Features:**
-    - Monthly revenue bar charts
-    - Enhanced performance tables with cross-metrics
-    - Month-over-month revenue, volume, and pieces analysis
-    - Top/worst performers with additional context
-    """)
-
-if not uploaded_file:
-    st.info("""
-    👆 **Please upload your Excel file to begin.**
-    
-    **Expected file structure:**
-    - Multiple sheets (Aviation SVC, MNX Charter, AMS, LDN, Americas International Desk)
-    - Required columns: PU CTRY, STATUS, POD DATE/TIME, ACCT NM
-    - Optional columns: UPD DEL, QDT, QC NAME, PIECES, TOTAL CHARGES
-    
-    **Data processing:**
-    - Filters for EMEA countries only
-    - Filters for STATUS = 440-BILLED
-    - Categorizes accounts as Healthcare or Non-Healthcare
-    - Calculates OTP metrics by POD month
-    - Analyzes month-over-month performance changes
-    """)
-    st.stop()
-
-# Process uploaded file
-if uploaded_file:
-    with st.spinner("Processing Excel file..."):
-        healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
-
-    # Detailed validation info
-    if debug_mode:
-        with st.expander("🔍 Debug: Complete Data Flow"):
-            st.write("**1. Sheets Read:**")
-            for sheet_name in ['Aviation SVC', 'MNX Charter', 'AMS', 'LDN', 'Americas International Desk']:
-                if sheet_name in stats.get('by_sheet', {}):
-                    sheet_stats = stats['by_sheet'][sheet_name]
-                    st.write(f"   {sheet_name}:")
-                    st.write(f"      - Initial: {sheet_stats['initial']:,} rows")
-                    st.write(f"      - After EMEA filter: {sheet_stats['emea']:,} rows")
-                    st.write(f"      - After 440-BILLED filter: {sheet_stats['final']:,} rows")
-            
-            st.write("\n**2. Combined Data:**")
-            st.write(f"   Total combined (EMEA + 440-BILLED): {stats.get('status_filtered', 0):,} rows")
-            
-            st.write("\n**3. Healthcare Classification:**")
-            st.write(f"   Healthcare: {stats.get('healthcare_rows', 0):,} rows")
-            st.write(f"   Non-Healthcare: {stats.get('non_healthcare_rows', 0):,} rows")
-            
-            # Show which sheets contribute to each category
-            if not healthcare_df.empty and 'Source_Sheet' in healthcare_df.columns:
-                st.write("\n**Healthcare by Source:**")
-                hc_sources = healthcare_df['Source_Sheet'].value_counts()
-                for sheet, count in hc_sources.items():
-                    st.write(f"   {sheet}: {count:,} rows")
-            
-            if not non_healthcare_df.empty and 'Source_Sheet' in non_healthcare_df.columns:
-                st.write("\n**Non-Healthcare by Source:**")
-                non_hc_sources = non_healthcare_df['Source_Sheet'].value_counts()
-                for sheet, count in non_hc_sources.items():
-                    st.write(f"   {sheet}: {count:,} rows")
-
-    # Show processing statistics
-    with st.expander("📈 Data Processing Statistics"):
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Rows", f"{stats.get('total_rows', 0):,}")
-        with col2:
-            st.metric("EMEA Rows", f"{stats.get('emea_rows', 0):,}")
-        with col3:
-            st.metric("440-BILLED", f"{stats.get('status_filtered', 0):,}")
-        with col4:
-            st.metric("HC / Non-HC", f"{stats.get('healthcare_rows', 0):,} / {stats.get('non_healthcare_rows', 0):,}")
-        
-        if 'by_sheet' in stats:
-            st.markdown("#### Breakdown by Sheet:")
-            sheet_df = pd.DataFrame(stats['by_sheet']).T
-            sheet_df.columns = ['Initial Rows', 'After EMEA Filter', 'After Status Filter']
-            st.dataframe(sheet_df)
-            
-            # Additional validation
-            st.markdown("#### Validation:")
-            total_processed = stats.get('healthcare_rows', 0) + stats.get('non_healthcare_rows', 0)
-            st.write(f"✓ Total after filters: {stats.get('status_filtered', 0)}")
-            st.write(f"✓ HC + Non-HC total: {total_processed}")
-            if total_processed == stats.get('status_filtered', 0):
-                st.success("✅ All filtered rows are categorized correctly!")
-            else:
-                st.warning(f"⚠️ Mismatch: {stats.get('status_filtered', 0) - total_processed} rows not categorized")
-
-    # Create tabs
-    tab1, tab2 = st.tabs(["🏥 Healthcare", "✈️ Non-Healthcare"])
-
-    with tab1:
-        st.markdown("## Healthcare Sector Analysis")
-        if not healthcare_df.empty:
-            st.markdown(f"**Total Healthcare Entries:** {len(healthcare_df):,}")
-            # Show sample accounts
-            with st.expander("Sample Healthcare Accounts"):
-                if 'ACCT NM' in healthcare_df.columns:
-                    unique_accounts = healthcare_df['ACCT NM'].dropna().unique()[:20]
-                    st.write(", ".join(unique_accounts))
-            
-            # Debug info
-            if debug_mode:
-                with st.expander("🔍 Debug: Healthcare POD Date Processing"):
-                    if 'POD DATE/TIME' in healthcare_df.columns:
-                        sample_pod = healthcare_df[['POD DATE/TIME']].dropna().head(10)
-                        st.write("Sample POD DATE/TIME values:")
-                        st.dataframe(sample_pod)
-                        
-                        # Show how dates are being parsed
-                        test_dates = _excel_to_dt(healthcare_df['POD DATE/TIME'].head(10))
-                        st.write("Parsed dates:")
-                        st.write(test_dates.to_list())
-                        
-                        # Show month grouping
-                        st.write("Month grouping (YYYY-MM):")
-                        st.write(test_dates.dt.to_period("M").astype(str).to_list())
-        
-        create_dashboard_view(healthcare_df, "Healthcare", otp_target, debug_mode)
-
-    with tab2:
-        st.markdown("## Non-Healthcare Sector Analysis")
-        if not non_healthcare_df.empty:
-            st.markdown(f"**Total Non-Healthcare Entries:** {len(non_healthcare_df):,}")
-            # Show sample accounts
-            with st.expander("Sample Non-Healthcare Accounts"):
-                if 'ACCT NM' in non_healthcare_df.columns:
-                    unique_accounts = non_healthcare_df['ACCT NM'].dropna().unique()[:20]
-                    st.write(", ".join(unique_accounts))
-            
-            # Debug info
-            if debug_mode:
-                with st.expander("🔍 Debug: Non-Healthcare POD Date Processing"):
-                    if 'POD DATE/TIME' in non_healthcare_df.columns:
-                        sample_pod = non_healthcare_df[['POD DATE/TIME']].dropna().head(10)
-                        st.write("Sample POD DATE/TIME values:")
-                        st.dataframe(sample_pod)
-                        
-                        # Show how dates are being parsed
-                        test_dates = _excel_to_dt(non_healthcare_df['POD DATE/TIME'].head(10))
-                        st.write("Parsed dates:")
-                        st.write(test_dates.to_list())
-                        
-                        # Show month grouping
-                        st.write("Month grouping (YYYY-MM):")
-                        st.write(test_dates.dt.to_period("M").astype(str).to_list())
-        
-        create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)import re
+import re
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -309,6 +19,8 @@ SLATE = "#334155"
 GRID  = "#e5e7eb"
 RED   = "#dc2626"
 EMERALD = "#059669"
+PURPLE = "#8b5cf6"
+ORANGE = "#f97316"
 
 st.markdown("""
 <style>
@@ -323,27 +35,6 @@ h2 {color:#0b1f44;font-weight:700;margin-top:1.2rem;margin-bottom:.6rem;}
 .stTabs [aria-selected="true"] {background-color: #0b1f44;color: white;}
 .metric-card {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:12px;padding:20px;color:white;}
 .perf-table {border-radius:8px;overflow:hidden;box-shadow:0 2px 4px rgba(0,0,0,0.1);}
-.stDataFrame {
-    width: 100% !important;
-}
-.stDataFrame > div {
-    width: 100% !important;
-}
-.stDataFrame table {
-    width: 100% !important;
-    table-layout: auto !important;
-}
-.stDataFrame th {
-    white-space: nowrap !important;
-    padding: 8px 12px !important;
-    font-size: 12px !important;
-    background-color: #f8f9fa !important;
-}
-.stDataFrame td {
-    white-space: nowrap !important;
-    padding: 6px 10px !important;
-    font-size: 12px !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -403,7 +94,7 @@ NON_HEALTHCARE_KEYWORDS = [
 
 CTRL_REGEX = re.compile(r"\b(agent|del\s*agt|delivery\s*agent|customs|warehouse|w/house)\b", re.I)
 
-# ---------------- Helper Functions ----------------
+# ---------------- Helpers ----------------
 def _excel_to_dt(s: pd.Series) -> pd.Series:
     """Robust datetime: parse; if many NaT, try Excel serials."""
     out = pd.to_datetime(s, errors="coerce")
@@ -434,9 +125,23 @@ def _revenue_fmt(n: float) -> str:
     if n >= 1000000:
         return f"${n/1000000:.2f}M"
     elif n >= 1000:
-        return f"${n/1000:.1f}K"
+        return f"${n/1000:.2f}K"
     else:
-        return f"${n:.0f}"
+        return f"${n:.2f}"
+
+def _number_fmt(n: float) -> str:
+    """Format numbers with thousand separators and 2 decimals"""
+    if pd.isna(n): return ""
+    try: n = float(n)
+    except: return ""
+    return f"{n:,.2f}"
+
+def _int_fmt(n: float) -> str:
+    """Format integers with thousand separators"""
+    if pd.isna(n): return ""
+    try: n = float(n)
+    except: return ""
+    return f"{int(n):,}"
 
 def is_healthcare(account_name, sheet_name=None):
     """Determine if an account is healthcare-related."""
@@ -516,7 +221,7 @@ def analyze_monthly_changes(df: pd.DataFrame, metric: str = 'TOTAL CHARGES'):
     return monthly
 
 def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector: str):
-    """Create top/worst performance tables for a specific month with enhanced columns"""
+    """Create top/worst performance tables for a specific month"""
     if monthly_changes.empty:
         return
     
@@ -525,6 +230,7 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
         st.info(f"No data available for {month}")
         return
     
+    # Remove rows with NaN changes (first month for each account)
     month_data = month_data.dropna(subset=['Revenue_Change'])
     
     if month_data.empty:
@@ -533,489 +239,275 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
     
     st.subheader(f"📊 {sector} Performance Analysis - {month}")
     
-    # Revenue Performance with Volume columns
-    st.markdown("### 💰 Revenue Performance (with Volume Changes)")
+    # Create three columns for the metrics
+    col1, col2, col3 = st.columns(3)
     
-    # Top 10 Revenue Increases
-    top_revenue = month_data.nlargest(10, 'Revenue_Change')[
-        ['Account', 'Revenue', 'Revenue_Prev', 'Revenue_Change', 'Revenue_Change_Pct',
-         'Volume', 'Volume_Prev', 'Volume_Change', 'Volume_Change_Pct']
-    ].copy()
-    
-    if not top_revenue.empty:
-        st.markdown("**🔝 Top 10 Revenue Increases**")
-        top_revenue['Current Rev'] = top_revenue['Revenue'].apply(_revenue_fmt)
-        top_revenue['Rev Change'] = top_revenue.apply(
-            lambda x: f"+{_revenue_fmt(x['Revenue_Change'])} ({x['Revenue_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Revenue_Change_Pct']) else f"+{_revenue_fmt(x['Revenue_Change'])}", axis=1
-        )
-        top_revenue['Current Vol'] = top_revenue['Volume'].apply(lambda x: f"{x:,.0f}")
-        top_revenue['Vol Change'] = top_revenue.apply(
-            lambda x: f"+{x['Volume_Change']:,.0f} ({x['Volume_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Volume_Change_Pct']) and pd.notna(x['Volume_Change']) 
-            else "N/A", axis=1
-        )
+    # Revenue Performance
+    with col1:
+        st.markdown("### 💰 Revenue Performance")
         
-        display_df = top_revenue[['Account', 'Current Rev', 'Rev Change', 'Current Vol', 'Vol Change']].head(10)
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
-    
-    # Worst 10 Revenue Decreases
-    worst_revenue = month_data.nsmallest(10, 'Revenue_Change')[
-        ['Account', 'Revenue', 'Revenue_Prev', 'Revenue_Change', 'Revenue_Change_Pct',
-         'Volume', 'Volume_Prev', 'Volume_Change', 'Volume_Change_Pct']
-    ].copy()
-    
-    if not worst_revenue.empty:
-        st.markdown("**📉 Top 10 Revenue Decreases**")
-        worst_revenue['Current Rev'] = worst_revenue['Revenue'].apply(_revenue_fmt)
-        worst_revenue['Rev Change'] = worst_revenue.apply(
-            lambda x: f"{_revenue_fmt(x['Revenue_Change'])} ({x['Revenue_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Revenue_Change_Pct']) else f"{_revenue_fmt(x['Revenue_Change'])}", axis=1
-        )
-        worst_revenue['Current Vol'] = worst_revenue['Volume'].apply(lambda x: f"{x:,.0f}")
-        worst_revenue['Vol Change'] = worst_revenue.apply(
-            lambda x: f"{x['Volume_Change']:,.0f} ({x['Volume_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Volume_Change_Pct']) and pd.notna(x['Volume_Change']) 
-            else "N/A", axis=1
-        )
+        # Top 10 Revenue Increases
+        top_revenue = month_data.nlargest(10, 'Revenue_Change')[
+            ['Account', 'Revenue', 'Revenue_Prev', 'Revenue_Change', 'Revenue_Change_Pct', 'Volume', 'Volume_Change']
+        ].copy()
         
-        display_df = worst_revenue[['Account', 'Current Rev', 'Rev Change', 'Current Vol', 'Vol Change']].head(10)
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
-    
-    st.markdown("---")
-
-    # ---------------- Chart: Net OTP by Volume (POD) ----------------
-    st.subheader(f"{tab_name}: Controllable (Net) OTP by Volume — POD Month")
-    if not vol_pod.empty and not otp_pod.empty:
-        mv = vol_pod.merge(otp_pod[["Month_YYYY_MM","Net_OTP"]],
-                           on="Month_YYYY_MM", how="left").sort_values("Month_Sort")
-        x = mv["Month_Display"].tolist()
-        y_vol = mv["Volume"].astype(float).tolist()
-        y_net = mv["Net_OTP"].astype(float).tolist()
-
-        fig = go.Figure()
-        # Bar chart with values at bottom
-        fig.add_trace(go.Bar(
-            x=x, y=y_vol, name="Volume (Rows)", 
-            marker_color=NAVY,
-            text=[_kfmt(v) for v in y_vol],
-            textposition="inside",
-            textfont=dict(size=14, color="white", family="Arial Black"),
-            textangle=0,
-            yaxis="y",
-            insidetextanchor="start"  # This anchors text at bottom of bar
-        ))
-        
-        # OTP line
-        fig.add_trace(go.Scatter(
-            x=x, y=y_net, name="Net OTP",
-            mode="lines+markers", 
-            line=dict(color=GOLD, width=3),
-            marker=dict(size=10, color=GOLD),
-            yaxis="y2"
-        ))
-        
-        # Add OTP percentage labels above the line points
-        for i, (xi, yi) in enumerate(zip(x, y_net)):
-            if pd.notna(yi):
-                fig.add_annotation(
-                    x=xi, y=yi, xref="x", yref="y2",
-                    text=f"<b>{yi:.2f}%</b>",
-                    showarrow=False,
-                    yshift=20,
-                    font=dict(size=13, color="#111827", family="Arial Black"),
-                    bgcolor="white",
-                    bordercolor=GOLD,
-                    borderwidth=1,
-                    borderpad=4
-                )
-        
-        # Target line
-        fig.add_shape(
-            type="line", x0=-0.5, x1=len(x)-0.5,
-            y0=float(otp_target), y1=float(otp_target),
-            xref="x", yref="y2", 
-            line=dict(color="red", dash="dash", width=2)
-        )
-        
-        # Add target label
-        fig.add_annotation(
-            x=len(x)-0.5, y=float(otp_target),
-            xref="x", yref="y2",
-            text=f"Target: {otp_target}%",
-            showarrow=False,
-            xshift=-50,
-            font=dict(size=12, color="red"),
-            bgcolor="white"
-        )
-        
-        fig.update_layout(
-            height=520, 
-            hovermode="x unified", 
-            plot_bgcolor="white",
-            margin=dict(l=40, r=40, t=40, b=80),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
-            xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
-            yaxis=dict(title="Volume (Rows)", side="left", gridcolor=GRID, showgrid=True),
-            yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 120], showgrid=False),
-            barmode="overlay"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No monthly volume available.")
-
-    st.markdown("---")
-
-    # ---------------- Chart: Net OTP by Pieces (POD) ----------------
-    st.subheader(f"{tab_name}: Controllable (Net) OTP by Pieces — POD Month")
-    if not pieces_pod.empty and not otp_pod.empty:
-        mp = pieces_pod.merge(otp_pod[["Month_YYYY_MM","Net_OTP"]],
-                              on="Month_YYYY_MM", how="left").sort_values("Month_Sort")
-        x = mp["Month_Display"].tolist()
-        y_pcs = mp["Pieces"].astype(float).tolist()
-        y_net = mp["Net_OTP"].astype(float).tolist()
-
-        figp = go.Figure()
-        # Bar chart with values at bottom
-        figp.add_trace(go.Bar(
-            x=x, y=y_pcs, name="Pieces", 
-            marker_color=NAVY,
-            text=[_kfmt(v) for v in y_pcs],
-            textposition="inside",
-            textfont=dict(size=14, color="white", family="Arial Black"),
-            textangle=0,
-            yaxis="y",
-            insidetextanchor="start"  # This anchors text at bottom of bar
-        ))
-        
-        # OTP line
-        figp.add_trace(go.Scatter(
-            x=x, y=y_net, name="Net OTP",
-            mode="lines+markers",
-            line=dict(color=GOLD, width=3),
-            marker=dict(size=10, color=GOLD),
-            yaxis="y2"
-        ))
-        
-        # Add OTP percentage labels above the line points
-        for i, (xi, yi) in enumerate(zip(x, y_net)):
-            if pd.notna(yi):
-                figp.add_annotation(
-                    x=xi, y=yi, xref="x", yref="y2",
-                    text=f"<b>{yi:.2f}%</b>",
-                    showarrow=False,
-                    yshift=20,
-                    font=dict(size=13, color="#111827", family="Arial Black"),
-                    bgcolor="white",
-                    bordercolor=GOLD,
-                    borderwidth=1,
-                    borderpad=4
-                )
-        
-        # Target line
-        figp.add_shape(
-            type="line", x0=-0.5, x1=len(x)-0.5,
-            y0=float(otp_target), y1=float(otp_target),
-            xref="x", yref="y2",
-            line=dict(color="red", dash="dash", width=2)
-        )
-        
-        # Add target label
-        figp.add_annotation(
-            x=len(x)-0.5, y=float(otp_target),
-            xref="x", yref="y2",
-            text=f"Target: {otp_target}%",
-            showarrow=False,
-            xshift=-50,
-            font=dict(size=12, color="red"),
-            bgcolor="white"
-        )
-        
-        figp.update_layout(
-            height=520,
-            hovermode="x unified",
-            plot_bgcolor="white",
-            margin=dict(l=40, r=40, t=40, b=80),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
-            xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
-            yaxis=dict(title="Pieces", side="left", gridcolor=GRID, showgrid=True),
-            yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 120], showgrid=False),
-            barmode="overlay"
-        )
-        st.plotly_chart(figp, use_container_width=True)
-    else:
-        st.info("No monthly PIECES available.")
-
-    st.markdown("---")
-
-    # ---------------- Chart: Gross vs Net OTP (POD) ----------------
-    st.subheader(f"{tab_name}: Monthly OTP Trend (Gross vs Net) — POD Month")
-    if not otp_pod.empty:
-        otp_sorted = otp_pod.sort_values("Month_Sort")
-        x       = otp_sorted["Month_Display"].tolist()
-        gross_y = otp_sorted["Gross_OTP"].astype(float).tolist()
-        net_y   = otp_sorted["Net_OTP"].astype(float).tolist()
-
-        fig2 = go.Figure()
-        fig2.add_trace(go.Scatter(x=x, y=gross_y, mode="lines+markers", name="Gross OTP",
-                                  line=dict(color=BLUE, width=3), marker=dict(size=8)))
-        fig2.add_trace(go.Scatter(x=x, y=net_y, mode="lines+markers", name="Net OTP",
-                                  line=dict(color=GREEN, width=3), marker=dict(size=8)))
-        
-        # Add percentage labels for Gross OTP
-        for xi, yi in zip(x, gross_y):
-            if pd.notna(yi):
-                fig2.add_annotation(
-                    x=xi, y=yi, xref="x", yref="y",
-                    text=f"<b>{yi:.2f}%</b>",
-                    showarrow=False,
-                    yshift=20,
-                    font=dict(size=12, color=BLUE),
-                    bgcolor="rgba(255,255,255,0.8)"
-                )
-        
-        # Add percentage labels for Net OTP
-        for xi, yi in zip(x, net_y):
-            if pd.notna(yi):
-                fig2.add_annotation(
-                    x=xi, y=yi, xref="x", yref="y",
-                    text=f"<b>{yi:.2f}%</b>",
-                    showarrow=False,
-                    yshift=-20,
-                    font=dict(size=12, color=GREEN),
-                    bgcolor="rgba(255,255,255,0.8)"
-                )
-        
-        # Target line
-        fig2.add_shape(
-            type="line", x0=-0.5, x1=len(x)-0.5,
-            y0=float(otp_target), y1=float(otp_target),
-            xref="x", yref="y",
-            line=dict(color="red", dash="dash", width=2)
-        )
-        
-        # Add target label
-        fig2.add_annotation(
-            x=len(x)-0.5, y=float(otp_target),
-            xref="x", yref="y",
-            text=f"Target: {otp_target}%",
-            showarrow=False,
-            xshift=-50,
-            font=dict(size=12, color="red"),
-            bgcolor="white"
-        )
-        
-        fig2.update_layout(
-            height=460,
-            hovermode="x unified",
-            plot_bgcolor="white",
-            margin=dict(l=40, r=40, t=40, b=80),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
-            xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
-            yaxis=dict(title="OTP (%)", range=[0, 120], gridcolor=GRID, showgrid=True)
-        )
-        st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info("No monthly OTP trend available.")
-
-    # ---------------- NEW: Month-over-Month Performance Analysis ----------------
-    st.markdown("---")
-    st.subheader(f"📈 {tab_name}: Month-over-Month Performance Analysis")
-    
-    if 'TOTAL CHARGES' in processed_df.columns and 'ACCT NM' in processed_df.columns:
-        monthly_changes = analyze_monthly_changes(processed_df)
-        
-        if not monthly_changes.empty:
-            # Get unique months sorted
-            unique_months = monthly_changes.sort_values('Month_Sort')['Month'].unique()
+        if not top_revenue.empty:
+            st.markdown("**🔝 Top 10 Revenue Increases**")
             
-            # Create a selectbox for month selection
-            selected_month = st.selectbox(
-                f"Select month for {tab_name} performance analysis:",
-                options=unique_months[1:],  # Skip first month (no MoM data)
-                index=len(unique_months[1:]) - 1 if len(unique_months) > 1 else 0,  # Default to latest
-                key=f"{tab_name}_month_select"
+            # Format for display
+            display_df = pd.DataFrame({
+                'Account': top_revenue['Account'],
+                'Volume': top_revenue['Volume'].apply(lambda x: _int_fmt(x)),
+                'Vol Δ': top_revenue['Volume_Change'].apply(lambda x: f"+{_int_fmt(x)}" if x > 0 else _int_fmt(x)),
+                'Revenue': top_revenue['Revenue'].apply(_revenue_fmt),
+                'Rev Δ': top_revenue.apply(
+                    lambda x: f"+{_revenue_fmt(x['Revenue_Change'])} ({x['Revenue_Change_Pct']:.1f}%)" 
+                    if pd.notna(x['Revenue_Change_Pct']) else f"+{_revenue_fmt(x['Revenue_Change'])}", axis=1
+                )
+            })
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            # Create bar chart
+            fig_top = go.Figure()
+            fig_top.add_trace(go.Bar(
+                y=top_revenue['Account'].head(10),
+                x=top_revenue['Revenue_Change'].head(10),
+                orientation='h',
+                marker_color=GREEN,
+                text=top_revenue['Revenue_Change'].head(10).apply(_revenue_fmt),
+                textposition='outside',
+                textfont=dict(size=11, color=GREEN, family="Arial")
+            ))
+            fig_top.update_layout(
+                title="Top 10 Revenue Increases",
+                height=350,
+                plot_bgcolor="white",
+                margin=dict(l=10, r=40, t=40, b=40),
+                xaxis=dict(title="Revenue Change", gridcolor=GRID, showgrid=True),
+                yaxis=dict(title="", automargin=True, tickfont=dict(size=10))
             )
+            st.plotly_chart(fig_top, use_container_width=True)
+        
+        # Worst 10 Revenue Decreases
+        worst_revenue = month_data.nsmallest(10, 'Revenue_Change')[
+            ['Account', 'Revenue', 'Revenue_Prev', 'Revenue_Change', 'Revenue_Change_Pct', 'Volume', 'Volume_Change']
+        ].copy()
+        
+        if not worst_revenue.empty:
+            st.markdown("**📉 Top 10 Revenue Decreases**")
             
-            if selected_month:
-                create_performance_tables(monthly_changes, selected_month, tab_name)
-            
-            # Overall trend visualization
-            st.markdown("---")
-            st.subheader(f"📊 {tab_name}: Revenue Trend by Top Accounts")
-            
-            # Get top 10 accounts by total revenue
-            top_accounts_revenue = (processed_df.groupby('ACCT NM')['TOTAL CHARGES']
-                                   .sum()
-                                   .nlargest(10)
-                                   .index.tolist())
-            
-            # Filter monthly changes for top accounts
-            top_monthly = monthly_changes[monthly_changes['Account'].isin(top_accounts_revenue)]
-            
-            if not top_monthly.empty:
-                # Create line chart for revenue trends
-                fig_trend = go.Figure()
-                for account in top_accounts_revenue:
-                    account_data = top_monthly[top_monthly['Account'] == account].sort_values('Month_Sort')
-                    if not account_data.empty:
-                        fig_trend.add_trace(go.Scatter(
-                            x=account_data['Month'],
-                            y=account_data['Revenue'],
-                            mode='lines+markers',
-                            name=account[:30],  # Truncate long names
-                            line=dict(width=2),
-                            marker=dict(size=6)
-                        ))
-                
-                fig_trend.update_layout(
-                    title=f"Revenue Trends - Top 10 {tab_name} Accounts",
-                    height=450,
-                    hovermode="x unified",
-                    plot_bgcolor="white",
-                    legend=dict(orientation="v", yanchor="top", y=1, x=1.02),
-                    xaxis=dict(title="Month", tickangle=-30),
-                    yaxis=dict(title="Revenue ($)", gridcolor=GRID, showgrid=True)
+            display_df = pd.DataFrame({
+                'Account': worst_revenue['Account'],
+                'Volume': worst_revenue['Volume'].apply(lambda x: _int_fmt(x)),
+                'Vol Δ': worst_revenue['Volume_Change'].apply(lambda x: f"+{_int_fmt(x)}" if x > 0 else _int_fmt(x)),
+                'Revenue': worst_revenue['Revenue'].apply(_revenue_fmt),
+                'Rev Δ': worst_revenue.apply(
+                    lambda x: f"{_revenue_fmt(x['Revenue_Change'])} ({x['Revenue_Change_Pct']:.1f}%)" 
+                    if pd.notna(x['Revenue_Change_Pct']) else f"{_revenue_fmt(x['Revenue_Change'])}", axis=1
                 )
-                st.plotly_chart(fig_trend, use_container_width=True)
-        else:
-            st.info(f"Insufficient data for month-over-month analysis in {tab_name}")
-    else:
-        st.info(f"Revenue data (TOTAL CHARGES) not available for {tab_name} performance analysis")
-
-    st.markdown("---")
+            })
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            # Create bar chart
+            fig_worst = go.Figure()
+            fig_worst.add_trace(go.Bar(
+                y=worst_revenue['Account'].head(10),
+                x=worst_revenue['Revenue_Change'].head(10),
+                orientation='h',
+                marker_color=RED,
+                text=worst_revenue['Revenue_Change'].head(10).apply(_revenue_fmt),
+                textposition='outside',
+                textfont=dict(size=11, color=RED, family="Arial")
+            ))
+            fig_worst.update_layout(
+                title="Top 10 Revenue Decreases",
+                height=350,
+                plot_bgcolor="white",
+                margin=dict(l=10, r=40, t=40, b=40),
+                xaxis=dict(title="Revenue Change", gridcolor=GRID, showgrid=True),
+                yaxis=dict(title="", automargin=True, tickfont=dict(size=10))
+            )
+            st.plotly_chart(fig_worst, use_container_width=True)
     
-    # Volume Performance with Revenue columns
-    st.markdown("### 📦 Volume Performance (with Revenue Changes)")
-    
-    volume_data = month_data.dropna(subset=['Volume_Change'])
-    if not volume_data.empty:
+    # Volume Performance
+    with col2:
+        st.markdown("### 📦 Volume Performance")
+        
         # Top 10 Volume Increases
-        top_volume = volume_data.nlargest(10, 'Volume_Change')[
-            ['Account', 'Volume', 'Volume_Change', 'Volume_Change_Pct',
-             'Revenue', 'Revenue_Prev', 'Revenue_Change', 'Revenue_Change_Pct']
-        ].copy()
-        
-        st.markdown("**🔝 Top 10 Volume Increases**")
-        top_volume['Current Vol'] = top_volume['Volume'].apply(lambda x: f"{x:,.0f}")
-        top_volume['Vol Change'] = top_volume.apply(
-            lambda x: f"+{x['Volume_Change']:,.0f} ({x['Volume_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Volume_Change_Pct']) else f"+{int(x['Volume_Change'])}", axis=1
-        )
-        top_volume['Current Rev'] = top_volume['Revenue'].apply(_revenue_fmt)
-        top_volume['Rev Change'] = top_volume.apply(
-            lambda x: f"{_revenue_fmt(x['Revenue_Change'])} ({x['Revenue_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Revenue_Change_Pct']) and pd.notna(x['Revenue_Change']) 
-            else "N/A", axis=1
-        )
-        
-        display_df = top_volume[['Account', 'Current Vol', 'Vol Change', 'Current Rev', 'Rev Change']].head(10)
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
-        
-        # Worst 10 Volume Decreases
-        worst_volume = volume_data.nsmallest(10, 'Volume_Change')[
-            ['Account', 'Volume', 'Volume_Change', 'Volume_Change_Pct',
-             'Revenue', 'Revenue_Prev', 'Revenue_Change', 'Revenue_Change_Pct']
-        ].copy()
-        
-        st.markdown("**📉 Top 10 Volume Decreases**")
-        worst_volume['Current Vol'] = worst_volume['Volume'].apply(lambda x: f"{x:,.0f}")
-        worst_volume['Vol Change'] = worst_volume.apply(
-            lambda x: f"{x['Volume_Change']:,.0f} ({x['Volume_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Volume_Change_Pct']) else f"{int(x['Volume_Change'])}", axis=1
-        )
-        worst_volume['Current Rev'] = worst_volume['Revenue'].apply(_revenue_fmt)
-        worst_volume['Rev Change'] = worst_volume.apply(
-            lambda x: f"{_revenue_fmt(x['Revenue_Change'])} ({x['Revenue_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Revenue_Change_Pct']) and pd.notna(x['Revenue_Change']) 
-            else "N/A", axis=1
-        )
-        
-        display_df = worst_volume[['Account', 'Current Vol', 'Vol Change', 'Current Rev', 'Rev Change']].head(10)
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
+        volume_data = month_data.dropna(subset=['Volume_Change'])
+        if not volume_data.empty:
+            top_volume = volume_data.nlargest(10, 'Volume_Change')[
+                ['Account', 'Volume', 'Volume_Change', 'Volume_Change_Pct', 'Revenue', 'Revenue_Change']
+            ].copy()
+            
+            st.markdown("**🔝 Top 10 Volume Increases**")
+            
+            display_df = pd.DataFrame({
+                'Account': top_volume['Account'],
+                'Revenue': top_volume['Revenue'].apply(_revenue_fmt),
+                'Rev Δ': top_volume['Revenue_Change'].apply(lambda x: f"+{_revenue_fmt(x)}" if x > 0 else _revenue_fmt(x)),
+                'Volume': top_volume['Volume'].apply(_int_fmt),
+                'Vol Δ': top_volume.apply(
+                    lambda x: f"+{_int_fmt(x['Volume_Change'])} ({x['Volume_Change_Pct']:.1f}%)" 
+                    if pd.notna(x['Volume_Change_Pct']) else f"+{_int_fmt(x['Volume_Change'])}", axis=1
+                )
+            })
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            # Create bar chart
+            fig_top_vol = go.Figure()
+            fig_top_vol.add_trace(go.Bar(
+                y=top_volume['Account'].head(10),
+                x=top_volume['Volume_Change'].head(10),
+                orientation='h',
+                marker_color=BLUE,
+                text=top_volume['Volume_Change'].head(10).apply(_int_fmt),
+                textposition='outside',
+                textfont=dict(size=11, color=BLUE, family="Arial")
+            ))
+            fig_top_vol.update_layout(
+                title="Top 10 Volume Increases",
+                height=350,
+                plot_bgcolor="white",
+                margin=dict(l=10, r=40, t=40, b=40),
+                xaxis=dict(title="Volume Change", gridcolor=GRID, showgrid=True),
+                yaxis=dict(title="", automargin=True, tickfont=dict(size=10))
+            )
+            st.plotly_chart(fig_top_vol, use_container_width=True)
+            
+            # Worst 10 Volume Decreases
+            worst_volume = volume_data.nsmallest(10, 'Volume_Change')[
+                ['Account', 'Volume', 'Volume_Change', 'Volume_Change_Pct', 'Revenue', 'Revenue_Change']
+            ].copy()
+            
+            st.markdown("**📉 Top 10 Volume Decreases**")
+            
+            display_df = pd.DataFrame({
+                'Account': worst_volume['Account'],
+                'Revenue': worst_volume['Revenue'].apply(_revenue_fmt),
+                'Rev Δ': worst_volume['Revenue_Change'].apply(lambda x: f"+{_revenue_fmt(x)}" if x > 0 else _revenue_fmt(x)),
+                'Volume': worst_volume['Volume'].apply(_int_fmt),
+                'Vol Δ': worst_volume.apply(
+                    lambda x: f"{_int_fmt(x['Volume_Change'])} ({x['Volume_Change_Pct']:.1f}%)" 
+                    if pd.notna(x['Volume_Change_Pct']) else f"{_int_fmt(x['Volume_Change'])}", axis=1
+                )
+            })
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            # Create bar chart
+            fig_worst_vol = go.Figure()
+            fig_worst_vol.add_trace(go.Bar(
+                y=worst_volume['Account'].head(10),
+                x=worst_volume['Volume_Change'].head(10),
+                orientation='h',
+                marker_color=ORANGE,
+                text=worst_volume['Volume_Change'].head(10).apply(_int_fmt),
+                textposition='outside',
+                textfont=dict(size=11, color=ORANGE, family="Arial")
+            ))
+            fig_worst_vol.update_layout(
+                title="Top 10 Volume Decreases",
+                height=350,
+                plot_bgcolor="white",
+                margin=dict(l=10, r=40, t=40, b=40),
+                xaxis=dict(title="Volume Change", gridcolor=GRID, showgrid=True),
+                yaxis=dict(title="", automargin=True, tickfont=dict(size=10))
+            )
+            st.plotly_chart(fig_worst_vol, use_container_width=True)
     
-    st.markdown("---")
-    
-    # Pieces Performance with Revenue columns
-    st.markdown("### 📋 Pieces Performance (with Revenue Changes)")
-    
-    pieces_data = month_data.dropna(subset=['Pieces_Change'])
-    if not pieces_data.empty:
+    # Pieces Performance
+    with col3:
+        st.markdown("### 📋 Pieces Performance")
+        
         # Top 10 Pieces Increases
-        top_pieces = pieces_data.nlargest(10, 'Pieces_Change')[
-            ['Account', 'Pieces', 'Pieces_Change', 'Pieces_Change_Pct',
-             'Revenue', 'Revenue_Prev', 'Revenue_Change', 'Revenue_Change_Pct']
-        ].copy()
-        
-        st.markdown("**🔝 Top 10 Pieces Increases**")
-        top_pieces['Current Pieces'] = top_pieces['Pieces'].apply(lambda x: f"{x:,.0f}")
-        top_pieces['Pieces Change'] = top_pieces.apply(
-            lambda x: f"+{x['Pieces_Change']:,.0f} ({x['Pieces_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Pieces_Change_Pct']) else f"+{int(x['Pieces_Change'])}", axis=1
-        )
-        top_pieces['Current Rev'] = top_pieces['Revenue'].apply(_revenue_fmt)
-        top_pieces['Rev Change'] = top_pieces.apply(
-            lambda x: f"{_revenue_fmt(x['Revenue_Change'])} ({x['Revenue_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Revenue_Change_Pct']) and pd.notna(x['Revenue_Change']) 
-            else "N/A", axis=1
-        )
-        
-        display_df = top_pieces[['Account', 'Current Pieces', 'Pieces Change', 'Current Rev', 'Rev Change']].head(10)
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
-        
-        # Worst 10 Pieces Decreases
-        worst_pieces = pieces_data.nsmallest(10, 'Pieces_Change')[
-            ['Account', 'Pieces', 'Pieces_Change', 'Pieces_Change_Pct',
-             'Revenue', 'Revenue_Prev', 'Revenue_Change', 'Revenue_Change_Pct']
-        ].copy()
-        
-        st.markdown("**📉 Top 10 Pieces Decreases**")
-        worst_pieces['Current Pieces'] = worst_pieces['Pieces'].apply(lambda x: f"{x:,.0f}")
-        worst_pieces['Pieces Change'] = worst_pieces.apply(
-            lambda x: f"{x['Pieces_Change']:,.0f} ({x['Pieces_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Pieces_Change_Pct']) else f"{int(x['Pieces_Change'])}", axis=1
-        )
-        worst_pieces['Current Rev'] = worst_pieces['Revenue'].apply(_revenue_fmt)
-        worst_pieces['Rev Change'] = worst_pieces.apply(
-            lambda x: f"{_revenue_fmt(x['Revenue_Change'])} ({x['Revenue_Change_Pct']:.2f}%)" 
-            if pd.notna(x['Revenue_Change_Pct']) and pd.notna(x['Revenue_Change']) 
-            else "N/A", axis=1
-        )
-        
-        display_df = worst_pieces[['Account', 'Current Pieces', 'Pieces Change', 'Current Rev', 'Rev Change']].head(10)
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
+        pieces_data = month_data.dropna(subset=['Pieces_Change'])
+        if not pieces_data.empty:
+            top_pieces = pieces_data.nlargest(10, 'Pieces_Change')[
+                ['Account', 'Pieces', 'Pieces_Change', 'Pieces_Change_Pct', 'Revenue', 'Revenue_Change']
+            ].copy()
+            
+            st.markdown("**🔝 Top 10 Pieces Increases**")
+            
+            display_df = pd.DataFrame({
+                'Account': top_pieces['Account'],
+                'Revenue': top_pieces['Revenue'].apply(_revenue_fmt),
+                'Rev Δ': top_pieces['Revenue_Change'].apply(lambda x: f"+{_revenue_fmt(x)}" if x > 0 else _revenue_fmt(x)),
+                'Pieces': top_pieces['Pieces'].apply(_int_fmt),
+                'Pcs Δ': top_pieces.apply(
+                    lambda x: f"+{_int_fmt(x['Pieces_Change'])} ({x['Pieces_Change_Pct']:.1f}%)" 
+                    if pd.notna(x['Pieces_Change_Pct']) else f"+{_int_fmt(x['Pieces_Change'])}", axis=1
+                )
+            })
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            # Create bar chart
+            fig_top_pcs = go.Figure()
+            fig_top_pcs.add_trace(go.Bar(
+                y=top_pieces['Account'].head(10),
+                x=top_pieces['Pieces_Change'].head(10),
+                orientation='h',
+                marker_color=PURPLE,
+                text=top_pieces['Pieces_Change'].head(10).apply(_int_fmt),
+                textposition='outside',
+                textfont=dict(size=11, color=PURPLE, family="Arial")
+            ))
+            fig_top_pcs.update_layout(
+                title="Top 10 Pieces Increases",
+                height=350,
+                plot_bgcolor="white",
+                margin=dict(l=10, r=40, t=40, b=40),
+                xaxis=dict(title="Pieces Change", gridcolor=GRID, showgrid=True),
+                yaxis=dict(title="", automargin=True, tickfont=dict(size=10))
+            )
+            st.plotly_chart(fig_top_pcs, use_container_width=True)
+            
+            # Worst 10 Pieces Decreases
+            worst_pieces = pieces_data.nsmallest(10, 'Pieces_Change')[
+                ['Account', 'Pieces', 'Pieces_Change', 'Pieces_Change_Pct', 'Revenue', 'Revenue_Change']
+            ].copy()
+            
+            st.markdown("**📉 Top 10 Pieces Decreases**")
+            
+            display_df = pd.DataFrame({
+                'Account': worst_pieces['Account'],
+                'Revenue': worst_pieces['Revenue'].apply(_revenue_fmt),
+                'Rev Δ': worst_pieces['Revenue_Change'].apply(lambda x: f"+{_revenue_fmt(x)}" if x > 0 else _revenue_fmt(x)),
+                'Pieces': worst_pieces['Pieces'].apply(_int_fmt),
+                'Pcs Δ': worst_pieces.apply(
+                    lambda x: f"{_int_fmt(x['Pieces_Change'])} ({x['Pieces_Change_Pct']:.1f}%)" 
+                    if pd.notna(x['Pieces_Change_Pct']) else f"{_int_fmt(x['Pieces_Change'])}", axis=1
+                )
+            })
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            # Create bar chart
+            fig_worst_pcs = go.Figure()
+            fig_worst_pcs.add_trace(go.Bar(
+                y=worst_pieces['Account'].head(10),
+                x=worst_pieces['Pieces_Change'].head(10),
+                orientation='h',
+                marker_color=RED,
+                text=worst_pieces['Pieces_Change'].head(10).apply(_int_fmt),
+                textposition='outside',
+                textfont=dict(size=11, color=RED, family="Arial")
+            ))
+            fig_worst_pcs.update_layout(
+                title="Top 10 Pieces Decreases",
+                height=350,
+                plot_bgcolor="white",
+                margin=dict(l=10, r=40, t=40, b=40),
+                xaxis=dict(title="Pieces Change", gridcolor=GRID, showgrid=True),
+                yaxis=dict(title="", automargin=True, tickfont=dict(size=10))
+            )
+            st.plotly_chart(fig_worst_pcs, use_container_width=True)
 
-# ---------------- IO Functions ----------------
+# ---------------- IO ----------------
 @st.cache_data(show_spinner=False)
 def read_and_combine_sheets(uploaded):
     """Read Excel and split into healthcare and non-healthcare dataframes."""
@@ -1115,7 +607,7 @@ def read_and_combine_sheets(uploaded):
         st.error(f"Error reading file: {str(e)}")
         return pd.DataFrame(), pd.DataFrame(), {}
 
-# ---------------- Prep Functions ----------------
+# ---------------- Prep (ROW-LEVEL; each row = one entry) ----------------
 @st.cache_data(show_spinner=False)
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1325,92 +817,605 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
 
     st.markdown("---")
 
-    # ---------------- Monthly Revenue Bar Chart ----------------
-    st.subheader(f"💰 {tab_name}: Monthly Revenue Overview")
+    # ---------------- NEW: Month-over-Month Performance Analysis ----------------
+    st.markdown("---")
+    st.subheader(f"📈 {tab_name}: Month-over-Month Performance Analysis")
     
-    if not revenue_pod.empty:
-        revenue_sorted = revenue_pod.sort_values("Month_Sort")
-        x = revenue_sorted["Month_Display"].tolist()
-        y_revenue = revenue_sorted["Revenue"].astype(float).tolist()
+    if 'TOTAL CHARGES' in processed_df.columns and 'ACCT NM' in processed_df.columns:
+        monthly_changes = analyze_monthly_changes(processed_df)
         
-        fig_rev = go.Figure()
-        
-        # Bar chart for monthly revenue
-        fig_rev.add_trace(go.Bar(
-            x=x,
-            y=y_revenue,
-            name="Monthly Revenue",
-            marker_color=NAVY,
-            text=[_revenue_fmt(v) for v in y_revenue],
-            textposition="outside",
-            textfont=dict(size=12, color=NAVY, family="Arial Black"),
-            hovertemplate="<b>%{x}</b><br>Revenue: %{text}<extra></extra>"
-        ))
-        
-        # Calculate and show average line
-        avg_revenue = float(np.mean(y_revenue))
-        fig_rev.add_shape(
-            type="line",
-            x0=-0.5,
-            x1=len(x)-0.5,
-            y0=avg_revenue,
-            y1=avg_revenue,
-            xref="x",
-            yref="y",
-            line=dict(color=GOLD, dash="dash", width=2)
-        )
-        
-        fig_rev.add_annotation(
-            x=len(x)-0.5,
-            y=avg_revenue,
-            xref="x",
-            yref="y",
-            text=f"Avg: {_revenue_fmt(avg_revenue)}",
-            showarrow=False,
-            xshift=-60,
-            font=dict(size=11, color=GOLD),
-            bgcolor="white",
-            bordercolor=GOLD,
-            borderwidth=1
-        )
-        
-        # Add total revenue annotation
-        total_rev = float(sum(y_revenue))
-        fig_rev.add_annotation(
-            x=0.5,
-            y=1.05,
-            xref="paper",
-            yref="paper",
-            text=f"<b>Total Revenue: {_revenue_fmt(total_rev)}</b>",
-            showarrow=False,
-            font=dict(size=14, color=NAVY),
-            bgcolor="rgba(240, 180, 41, 0.1)",
-            bordercolor=GOLD,
-            borderwidth=2,
-            borderpad=8
-        )
-        
-        fig_rev.update_layout(
-            height=500,
-            plot_bgcolor="white",
-            margin=dict(l=60, r=60, t=80, b=100),
-            xaxis=dict(
-                title="Month",
-                tickangle=-30,
-                tickfont=dict(size=11)
-            ),
-            yaxis=dict(
-                title="Revenue ($)",
-                titlefont=dict(size=13),
-                tickfont=dict(size=11),
-                gridcolor=GRID,
-                showgrid=True
-            ),
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig_rev, use_container_width=True)
+        if not monthly_changes.empty:
+            # Get unique months sorted
+            unique_months = monthly_changes.sort_values('Month_Sort')['Month'].unique()
+            
+            # Create a selectbox for month selection
+            selected_month = st.selectbox(
+                f"Select month for {tab_name} performance analysis:",
+                options=unique_months[1:],  # Skip first month (no MoM data)
+                index=len(unique_months[1:]) - 1 if len(unique_months) > 1 else 0,  # Default to latest
+                key=f"{tab_name}_month_select"
+            )
+            
+            if selected_month:
+                create_performance_tables(monthly_changes, selected_month, tab_name)
+            
+            # Overall trend visualization - NEW: Total Revenue Bar Chart & Histogram
+            st.markdown("---")
+            st.subheader(f"📊 {tab_name}: Total Revenue by Month")
+            
+            # Aggregate total revenue per month
+            monthly_revenue = revenue_pod.copy()
+            
+            if not monthly_revenue.empty:
+                col_chart1, col_chart2 = st.columns(2)
+                
+                with col_chart1:
+                    # Bar Chart
+                    fig_bar = go.Figure()
+                    fig_bar.add_trace(go.Bar(
+                        x=monthly_revenue['Month_Display'],
+                        y=monthly_revenue['Revenue'],
+                        marker_color=NAVY,
+                        text=monthly_revenue['Revenue'].apply(_revenue_fmt),
+                        textposition='outside',
+                        textfont=dict(size=12, color=NAVY, family="Arial Black")
+                    ))
+                    fig_bar.update_layout(
+                        title=f"Total Revenue Per Month - {tab_name}",
+                        height=400,
+                        plot_bgcolor="white",
+                        xaxis=dict(title="Month", tickangle=-30),
+                        yaxis=dict(title="Revenue ($)", gridcolor=GRID, showgrid=True),
+                        margin=dict(l=40, r=40, t=60, b=80)
+                    )
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                
+                with col_chart2:
+                    # Histogram
+                    fig_hist = go.Figure()
+                    fig_hist.add_trace(go.Histogram(
+                        x=monthly_revenue['Revenue'],
+                        marker_color=GOLD,
+                        nbinsx=10,
+                        name='Revenue Distribution'
+                    ))
+                    fig_hist.update_layout(
+                        title=f"Revenue Distribution - {tab_name}",
+                        height=400,
+                        plot_bgcolor="white",
+                        xaxis=dict(title="Revenue ($)", gridcolor=GRID, showgrid=True),
+                        yaxis=dict(title="Frequency", gridcolor=GRID, showgrid=True),
+                        margin=dict(l=40, r=40, t=60, b=80),
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig_hist, use_container_width=True)
+        else:
+            st.info(f"Insufficient data for month-over-month analysis in {tab_name}")
     else:
-        st.info(f"No monthly revenue data available for {tab_name}")
+        st.info(f"Revenue data (TOTAL CHARGES) not available for {tab_name} performance analysis")
 
     st.markdown("---")
+
+    # ---------------- Chart: Net OTP by Volume (POD) ----------------
+    st.subheader(f"{tab_name}: Controllable (Net) OTP by Volume — POD Month")
+    if not vol_pod.empty and not otp_pod.empty:
+        mv = vol_pod.merge(otp_pod[["Month_YYYY_MM","Net_OTP"]],
+                           on="Month_YYYY_MM", how="left").sort_values("Month_Sort")
+        x = mv["Month_Display"].tolist()
+        y_vol = mv["Volume"].astype(float).tolist()
+        y_net = mv["Net_OTP"].astype(float).tolist()
+
+        fig = go.Figure()
+        # Bar chart with values at bottom
+        fig.add_trace(go.Bar(
+            x=x, y=y_vol, name="Volume (Rows)", 
+            marker_color=NAVY,
+            text=[_kfmt(v) for v in y_vol],
+            textposition="inside",
+            textfont=dict(size=14, color="white", family="Arial Black"),
+            textangle=0,
+            yaxis="y",
+            insidetextanchor="start"  # This anchors text at bottom of bar
+        ))
+        
+        # OTP line
+        fig.add_trace(go.Scatter(
+            x=x, y=y_net, name="Net OTP",
+            mode="lines+markers", 
+            line=dict(color=GOLD, width=3),
+            marker=dict(size=10, color=GOLD),
+            yaxis="y2"
+        ))
+        
+        # Add OTP percentage labels above the line points
+        for i, (xi, yi) in enumerate(zip(x, y_net)):
+            if pd.notna(yi):
+                fig.add_annotation(
+                    x=xi, y=yi, xref="x", yref="y2",
+                    text=f"<b>{yi:.2f}%</b>",
+                    showarrow=False,
+                    yshift=20,
+                    font=dict(size=13, color="#111827", family="Arial Black"),
+                    bgcolor="white",
+                    bordercolor=GOLD,
+                    borderwidth=1,
+                    borderpad=4
+                )
+        
+        # Target line
+        fig.add_shape(
+            type="line", x0=-0.5, x1=len(x)-0.5,
+            y0=float(otp_target), y1=float(otp_target),
+            xref="x", yref="y2", 
+            line=dict(color="red", dash="dash", width=2)
+        )
+        
+        # Add target label
+        fig.add_annotation(
+            x=len(x)-0.5, y=float(otp_target),
+            xref="x", yref="y2",
+            text=f"Target: {otp_target}%",
+            showarrow=False,
+            xshift=-50,
+            font=dict(size=12, color="red"),
+            bgcolor="white"
+        )
+        
+        fig.update_layout(
+            height=520, 
+            hovermode="x unified", 
+            plot_bgcolor="white",
+            margin=dict(l=40, r=40, t=40, b=80),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
+            xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
+            yaxis=dict(title="OTP (%)", range=[0, 120], gridcolor=GRID, showgrid=True)
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info("No monthly OTP trend available.")
+
+    # ---------------- Dynamic Worst Accounts by Month ----------------
+    st.subheader(f"{tab_name}: 5 Worst Accounts by Net OTP")
+    
+    if 'ACCT NM' in processed_df.columns:
+        base = processed_df.dropna(subset=['_pod', '_target']).copy()
+        if not base.empty:
+            # Get unique months for selection
+            base['Month_Year'] = base['_pod'].dt.to_period('M')
+            unique_periods = sorted(base['Month_Year'].unique())
+            
+            if unique_periods:
+                # Create month selector
+                selected_period = st.selectbox(
+                    f"Select month for worst accounts analysis ({tab_name}):",
+                    options=unique_periods,
+                    format_func=lambda x: x.strftime('%B %Y'),
+                    index=len(unique_periods)-1,  # Default to most recent
+                    key=f"{tab_name}_worst_month_select"
+                )
+                
+                # Filter for selected month
+                month_df = base[base['Month_Year'] == selected_period]
+                
+                if not month_df.empty:
+                    # Clean account names
+                    month_df['ACCT NM'] = month_df['ACCT NM'].astype(str).str.strip()
+                    month_df = month_df[month_df['ACCT NM'].ne('')]
+                    
+                    if not month_df.empty:
+                        # Net OTP (% as mean of boolean) + Volume (count of rows) for selected month
+                        grp = (month_df.groupby('ACCT NM', as_index=False)
+                                      .agg(Net_OTP=('On_Time_Net', 'mean'),
+                                           Volume=('On_Time_Net', 'size')))
+                        grp['Net_OTP'] = grp['Net_OTP'] * 100
+                        
+                        # Exclude NaN and 0% Net OTP
+                        grp = grp[grp['Net_OTP'].notna() & (grp['Net_OTP'] > 0)]
+                        
+                        if not grp.empty:
+                            worst = grp.nsmallest(5, 'Net_OTP').copy()
+                            worst['Net_OTP'] = worst['Net_OTP'].round(2)
+                            
+                            # Bar chart with Net OTP and Volume in labels + hover
+                            figw = go.Figure()
+                            figw.add_trace(go.Bar(
+                                x=worst['Net_OTP'],
+                                y=worst['ACCT NM'],
+                                orientation='h',
+                                marker_color=NAVY,
+                                text=[f"{otp:.2f}%  •  Vol {int(v)}" for otp, v in zip(worst['Net_OTP'], worst['Volume'])],
+                                textposition='outside',
+                                hovertemplate="<b>%{y}</b><br>Net OTP: %{x:.2f}%<br>Volume: %{customdata} rows<extra></extra>",
+                                customdata=worst['Volume']
+                            ))
+                            
+                            # Target reference
+                            figw.add_shape(
+                                type="line",
+                                x0=float(otp_target), x1=float(otp_target),
+                                y0=-0.5, y1=len(worst)-0.5,
+                                xref="x", yref="y",
+                                line=dict(color="red", dash="dash", width=2)
+                            )
+                            figw.add_annotation(
+                                x=float(otp_target), y=-0.6,
+                                xref="x", yref="y",
+                                text=f"Target: {otp_target}%",
+                                showarrow=False,
+                                font=dict(size=12, color="red"),
+                                bgcolor="white"
+                            )
+                            
+                            figw.update_layout(
+                                title_text=f"{selected_period.strftime('%B %Y')} — Worst 5 by Net OTP (with Volume)",
+                                height=380,
+                                plot_bgcolor="white",
+                                margin=dict(l=10, r=40, t=40, b=40),
+                                xaxis=dict(title="Net OTP (%)", range=[0, 110], gridcolor=GRID, showgrid=True),
+                                yaxis=dict(title="", automargin=True)
+                            )
+                            st.plotly_chart(figw, use_container_width=True)
+                            
+                            # Compact table below for auditing
+                            st.caption(f"Worst 5 accounts — {selected_period.strftime('%B %Y')} (Net OTP and Volume)")
+                            st.dataframe(
+                                worst[['ACCT NM', 'Net_OTP', 'Volume']].rename(
+                                    columns={'ACCT NM':'Account', 'Net_OTP':'Net OTP (%)'}
+                                ),
+                                use_container_width=True
+                            )
+                        else:
+                            st.info(f"No non-null, >0% Net OTP accounts for {selected_period.strftime('%B %Y')}.")
+                    else:
+                        st.info(f"No valid account names for {selected_period.strftime('%B %Y')}.")
+                else:
+                    st.info(f"No data available for {selected_period.strftime('%B %Y')}.")
+            else:
+                st.info("No data with both POD and target available.")
+        else:
+            st.info("No rows with both POD and target available for account-level OTP.")
+    else:
+        st.info("Column 'ACCT NM' not found; cannot compute worst accounts.")
+
+    # ---------------- Optional QC breakdown ----------------
+    if "QC_NAME_CLEAN" in processed_df.columns or "QC NAME" in processed_df.columns:
+        qc_src = processed_df.copy()
+        if "QC_NAME_CLEAN" not in qc_src.columns and "QC NAME" in qc_src.columns:
+            qc_src["QC_NAME_CLEAN"] = qc_src["QC NAME"].astype(str)
+        qc_src["Control_Type"] = qc_src["QC_NAME_CLEAN"].str.contains(CTRL_REGEX, na=False).map({True:"Controllable", False:"Non-Controllable"})
+        qc_tbl = (qc_src.groupby(["Control_Type","QC_NAME_CLEAN"], dropna=False)
+                        .size().reset_index(name="Count")
+                        .sort_values(["Control_Type","Count"], ascending=[True, False]))
+        with st.expander(f"{tab_name}: QC NAME breakdown (controllable vs non-controllable)"):
+            st.dataframe(qc_tbl, use_container_width=True)
+
+# ---------------- Main Application ----------------
+# Sidebar
+with st.sidebar:
+    st.markdown("### 📁 Data Upload")
+    uploaded_file = st.file_uploader("Upload Excel (.xlsx) file", type=["xlsx"])
+    
+    st.markdown("### ⚙️ Settings")
+    otp_target = st.number_input("OTP Target (%)", min_value=0, max_value=100, value=OTP_TARGET, step=1)
+    
+    # Debug mode checkbox
+    debug_mode = st.checkbox("Show Debug Information", value=False)
+    
+    st.markdown("---")
+    st.markdown("### 📊 About this Dashboard")
+    st.markdown("""
+    This dashboard analyzes On-Time Performance (OTP) for:
+    - **Healthcare**: Medical, pharmaceutical, and life science companies
+    - **Non-Healthcare**: Aviation, logistics, and other industries
+    
+    **Data Scope:**
+    - EMEA countries only
+    - STATUS = 440-BILLED
+    - Month grouping by POD DATE/TIME
+    
+    **New Features:**
+    - Month-over-month revenue analysis
+    - Top/worst performers by revenue, volume, and pieces
+    - Dynamic month selection for analysis
+    - Revenue trend visualization with bar charts and histograms
+    - Enhanced data tables with accounting format
+    """)
+
+if not uploaded_file:
+    st.info("""
+    👆 **Please upload your Excel file to begin.**
+    
+    **Expected file structure:**
+    - Multiple sheets (Aviation SVC, MNX Charter, AMS, LDN, Americas International Desk)
+    - Required columns: PU CTRY, STATUS, POD DATE/TIME, ACCT NM
+    - Optional columns: UPD DEL, QDT, QC NAME, PIECES, TOTAL CHARGES
+    
+    **Data processing:**
+    - Filters for EMEA countries only
+    - Filters for STATUS = 440-BILLED
+    - Categorizes accounts as Healthcare or Non-Healthcare
+    - Calculates OTP metrics by POD month
+    - Analyzes month-over-month performance changes
+    """)
+    st.stop()
+
+# Process uploaded file
+with st.spinner("Processing Excel file..."):
+    healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
+
+# Detailed validation info
+if debug_mode:
+    with st.expander("🔍 Debug: Complete Data Flow"):
+        st.write("**1. Sheets Read:**")
+        for sheet_name in ['Aviation SVC', 'MNX Charter', 'AMS', 'LDN', 'Americas International Desk']:
+            if sheet_name in stats.get('by_sheet', {}):
+                sheet_stats = stats['by_sheet'][sheet_name]
+                st.write(f"   {sheet_name}:")
+                st.write(f"      - Initial: {sheet_stats['initial']:,} rows")
+                st.write(f"      - After EMEA filter: {sheet_stats['emea']:,} rows")
+                st.write(f"      - After 440-BILLED filter: {sheet_stats['final']:,} rows")
+        
+        st.write("\n**2. Combined Data:**")
+        st.write(f"   Total combined (EMEA + 440-BILLED): {stats.get('status_filtered', 0):,} rows")
+        
+        st.write("\n**3. Healthcare Classification:**")
+        st.write(f"   Healthcare: {stats.get('healthcare_rows', 0):,} rows")
+        st.write(f"   Non-Healthcare: {stats.get('non_healthcare_rows', 0):,} rows")
+        
+        # Show which sheets contribute to each category
+        if not healthcare_df.empty and 'Source_Sheet' in healthcare_df.columns:
+            st.write("\n**Healthcare by Source:**")
+            hc_sources = healthcare_df['Source_Sheet'].value_counts()
+            for sheet, count in hc_sources.items():
+                st.write(f"   {sheet}: {count:,} rows")
+        
+        if not non_healthcare_df.empty and 'Source_Sheet' in non_healthcare_df.columns:
+            st.write("\n**Non-Healthcare by Source:**")
+            non_hc_sources = non_healthcare_df['Source_Sheet'].value_counts()
+            for sheet, count in non_hc_sources.items():
+                st.write(f"   {sheet}: {count:,} rows")
+
+# Show processing statistics
+with st.expander("📈 Data Processing Statistics"):
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Rows", f"{stats.get('total_rows', 0):,}")
+    with col2:
+        st.metric("EMEA Rows", f"{stats.get('emea_rows', 0):,}")
+    with col3:
+        st.metric("440-BILLED", f"{stats.get('status_filtered', 0):,}")
+    with col4:
+        st.metric("HC / Non-HC", f"{stats.get('healthcare_rows', 0):,} / {stats.get('non_healthcare_rows', 0):,}")
+    
+    if 'by_sheet' in stats:
+        st.markdown("#### Breakdown by Sheet:")
+        sheet_df = pd.DataFrame(stats['by_sheet']).T
+        sheet_df.columns = ['Initial Rows', 'After EMEA Filter', 'After Status Filter']
+        st.dataframe(sheet_df)
+        
+        # Additional validation
+        st.markdown("#### Validation:")
+        total_processed = stats.get('healthcare_rows', 0) + stats.get('non_healthcare_rows', 0)
+        st.write(f"✓ Total after filters: {stats.get('status_filtered', 0)}")
+        st.write(f"✓ HC + Non-HC total: {total_processed}")
+        if total_processed == stats.get('status_filtered', 0):
+            st.success("✅ All filtered rows are categorized correctly!")
+        else:
+            st.warning(f"⚠️ Mismatch: {stats.get('status_filtered', 0) - total_processed} rows not categorized")
+
+# Create tabs
+tab1, tab2 = st.tabs(["🏥 Healthcare", "✈️ Non-Healthcare"])
+
+with tab1:
+    st.markdown("## Healthcare Sector Analysis")
+    if not healthcare_df.empty:
+        st.markdown(f"**Total Healthcare Entries:** {len(healthcare_df):,}")
+        # Show sample accounts
+        with st.expander("Sample Healthcare Accounts"):
+            if 'ACCT NM' in healthcare_df.columns:
+                unique_accounts = healthcare_df['ACCT NM'].dropna().unique()[:20]
+                st.write(", ".join(unique_accounts))
+        
+        # Debug info
+        if debug_mode:
+            with st.expander("🔍 Debug: Healthcare POD Date Processing"):
+                if 'POD DATE/TIME' in healthcare_df.columns:
+                    sample_pod = healthcare_df[['POD DATE/TIME']].dropna().head(10)
+                    st.write("Sample POD DATE/TIME values:")
+                    st.dataframe(sample_pod)
+                    
+                    # Show how dates are being parsed
+                    test_dates = _excel_to_dt(healthcare_df['POD DATE/TIME'].head(10))
+                    st.write("Parsed dates:")
+                    st.write(test_dates.to_list())
+                    
+                    # Show month grouping
+                    st.write("Month grouping (YYYY-MM):")
+                    st.write(test_dates.dt.to_period("M").astype(str).to_list())
+    
+    create_dashboard_view(healthcare_df, "Healthcare", otp_target, debug_mode)
+
+with tab2:
+    st.markdown("## Non-Healthcare Sector Analysis")
+    if not non_healthcare_df.empty:
+        st.markdown(f"**Total Non-Healthcare Entries:** {len(non_healthcare_df):,}")
+        # Show sample accounts
+        with st.expander("Sample Non-Healthcare Accounts"):
+            if 'ACCT NM' in non_healthcare_df.columns:
+                unique_accounts = non_healthcare_df['ACCT NM'].dropna().unique()[:20]
+                st.write(", ".join(unique_accounts))
+        
+        # Debug info
+        if debug_mode:
+            with st.expander("🔍 Debug: Non-Healthcare POD Date Processing"):
+                if 'POD DATE/TIME' in non_healthcare_df.columns:
+                    sample_pod = non_healthcare_df[['POD DATE/TIME']].dropna().head(10)
+                    st.write("Sample POD DATE/TIME values:")
+                    st.dataframe(sample_pod)
+                    
+                    # Show how dates are being parsed
+                    test_dates = _excel_to_dt(non_healthcare_df['POD DATE/TIME'].head(10))
+                    st.write("Parsed dates:")
+                    st.write(test_dates.to_list())
+                    
+                    # Show month grouping
+                    st.write("Month grouping (YYYY-MM):")
+                    st.write(test_dates.dt.to_period("M").astype(str).to_list())
+    
+    create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode) tickmode="array", tickvals=x, ticktext=x, automargin=True),
+            yaxis=dict(title="Volume (Rows)", side="left", gridcolor=GRID, showgrid=True),
+            yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 120], showgrid=False),
+            barmode="overlay"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No monthly volume available.")
+
+    st.markdown("---")
+
+    # ---------------- Chart: Net OTP by Pieces (POD) ----------------
+    st.subheader(f"{tab_name}: Controllable (Net) OTP by Pieces — POD Month")
+    if not pieces_pod.empty and not otp_pod.empty:
+        mp = pieces_pod.merge(otp_pod[["Month_YYYY_MM","Net_OTP"]],
+                              on="Month_YYYY_MM", how="left").sort_values("Month_Sort")
+        x = mp["Month_Display"].tolist()
+        y_pcs = mp["Pieces"].astype(float).tolist()
+        y_net = mp["Net_OTP"].astype(float).tolist()
+
+        figp = go.Figure()
+        # Bar chart with values at bottom
+        figp.add_trace(go.Bar(
+            x=x, y=y_pcs, name="Pieces", 
+            marker_color=NAVY,
+            text=[_kfmt(v) for v in y_pcs],
+            textposition="inside",
+            textfont=dict(size=14, color="white", family="Arial Black"),
+            textangle=0,
+            yaxis="y",
+            insidetextanchor="start"  # This anchors text at bottom of bar
+        ))
+        
+        # OTP line
+        figp.add_trace(go.Scatter(
+            x=x, y=y_net, name="Net OTP",
+            mode="lines+markers",
+            line=dict(color=GOLD, width=3),
+            marker=dict(size=10, color=GOLD),
+            yaxis="y2"
+        ))
+        
+        # Add OTP percentage labels above the line points
+        for i, (xi, yi) in enumerate(zip(x, y_net)):
+            if pd.notna(yi):
+                figp.add_annotation(
+                    x=xi, y=yi, xref="x", yref="y2",
+                    text=f"<b>{yi:.2f}%</b>",
+                    showarrow=False,
+                    yshift=20,
+                    font=dict(size=13, color="#111827", family="Arial Black"),
+                    bgcolor="white",
+                    bordercolor=GOLD,
+                    borderwidth=1,
+                    borderpad=4
+                )
+        
+        # Target line
+        figp.add_shape(
+            type="line", x0=-0.5, x1=len(x)-0.5,
+            y0=float(otp_target), y1=float(otp_target),
+            xref="x", yref="y2",
+            line=dict(color="red", dash="dash", width=2)
+        )
+        
+        # Add target label
+        figp.add_annotation(
+            x=len(x)-0.5, y=float(otp_target),
+            xref="x", yref="y2",
+            text=f"Target: {otp_target}%",
+            showarrow=False,
+            xshift=-50,
+            font=dict(size=12, color="red"),
+            bgcolor="white"
+        )
+        
+        figp.update_layout(
+            height=520,
+            hovermode="x unified",
+            plot_bgcolor="white",
+            margin=dict(l=40, r=40, t=40, b=80),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
+            xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
+            yaxis=dict(title="Pieces", side="left", gridcolor=GRID, showgrid=True),
+            yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 120], showgrid=False),
+            barmode="overlay"
+        )
+        st.plotly_chart(figp, use_container_width=True)
+    else:
+        st.info("No monthly PIECES available.")
+
+    st.markdown("---")
+
+    # ---------------- Chart: Gross vs Net OTP (POD) ----------------
+    st.subheader(f"{tab_name}: Monthly OTP Trend (Gross vs Net) — POD Month")
+    if not otp_pod.empty:
+        otp_sorted = otp_pod.sort_values("Month_Sort")
+        x       = otp_sorted["Month_Display"].tolist()
+        gross_y = otp_sorted["Gross_OTP"].astype(float).tolist()
+        net_y   = otp_sorted["Net_OTP"].astype(float).tolist()
+
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(x=x, y=gross_y, mode="lines+markers", name="Gross OTP",
+                                  line=dict(color=BLUE, width=3), marker=dict(size=8)))
+        fig2.add_trace(go.Scatter(x=x, y=net_y, mode="lines+markers", name="Net OTP",
+                                  line=dict(color=GREEN, width=3), marker=dict(size=8)))
+        
+        # Add percentage labels for Gross OTP
+        for xi, yi in zip(x, gross_y):
+            if pd.notna(yi):
+                fig2.add_annotation(
+                    x=xi, y=yi, xref="x", yref="y",
+                    text=f"<b>{yi:.2f}%</b>",
+                    showarrow=False,
+                    yshift=20,
+                    font=dict(size=12, color=BLUE),
+                    bgcolor="rgba(255,255,255,0.8)"
+                )
+        
+        # Add percentage labels for Net OTP
+        for xi, yi in zip(x, net_y):
+            if pd.notna(yi):
+                fig2.add_annotation(
+                    x=xi, y=yi, xref="x", yref="y",
+                    text=f"<b>{yi:.2f}%</b>",
+                    showarrow=False,
+                    yshift=-20,
+                    font=dict(size=12, color=GREEN),
+                    bgcolor="rgba(255,255,255,0.8)"
+                )
+        
+        # Target line
+        fig2.add_shape(
+            type="line", x0=-0.5, x1=len(x)-0.5,
+            y0=float(otp_target), y1=float(otp_target),
+            xref="x", yref="y",
+            line=dict(color="red", dash="dash", width=2)
+        )
+        
+        # Add target label
+        fig2.add_annotation(
+            x=len(x)-0.5, y=float(otp_target),
+            xref="x", yref="y",
+            text=f"Target: {otp_target}%",
+            showarrow=False,
+            xshift=-50,
+            font=dict(size=12, color="red"),
+            bgcolor="white"
+        )
+        
+        fig2.update_layout(
+            height=460,
+            hovermode="x unified",
+            plot_bgcolor="white",
+            margin=dict(l=40, r=40, t=40, b=80),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0),
+            xaxis=dict(title="", tickangle=-30,
