@@ -1346,4 +1346,4 @@ with tab2:
         height=450,
         plot_bgcolor="white",
         xaxis=dict(title="Account", tickangle=-45, automargin=True),
-        yaxis=dict(title="Revenue ($)", gridcolor=GRID, showgrid=
+        yaxis=dict(title="Revenue ($)", gridcolor=GRID, showgrid=True),
