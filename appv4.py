@@ -1285,7 +1285,7 @@ with tab2:
                     st.write("Month grouping (YYYY-MM):")
                     st.write(test_dates.dt.to_period("M").astype(str).to_list())
     
-  create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
+create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
 # Healthcare vs Non-Healthcare Dashboard
 # Enhanced with professional Month-over-Month analysis
 
