@@ -24,10 +24,10 @@ st.set_page_config(
 # ============================================================================
 
 # Color Palette
-NAVY = "#0b1f44"      # bars / gauge
-GOLD = "#f0b429"      # net line
-BLUE = "#1f77b4"      # gross line
-GREEN = "#10b981"     # alt net
+NAVY = "#0b1f44"
+GOLD = "#f0b429"
+BLUE = "#1f77b4"
+GREEN = "#10b981"
 SLATE = "#334155"
 GRID = "#e5e7eb"
 RED = "#dc2626"
@@ -40,14 +40,11 @@ OTP_TARGET = 95
 
 # EMEA Countries
 EMEA_COUNTRIES = {
-    # Europe
     'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 
     'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'GB', 'UK', 'NO', 'CH', 'IS',
     'AL', 'AD', 'AM', 'AZ', 'BA', 'BY', 'GE', 'XK', 'LI', 'MD', 'MC', 'ME', 'MK', 'RU', 'SM', 'RS', 
     'TR', 'UA', 'VA',
-    # Middle East
     'AE', 'BH', 'EG', 'IQ', 'IR', 'IL', 'JO', 'KW', 'LB', 'OM', 'PS', 'QA', 'SA', 'SY', 'YE',
-    # Africa
     'DZ', 'AO', 'BJ', 'BW', 'BF', 'BI', 'CM', 'CV', 'CF', 'TD', 'KM', 'CG', 'CD', 'DJ', 'GQ', 'ER',
     'ET', 'GA', 'GM', 'GH', 'GN', 'GW', 'CI', 'KE', 'LS', 'LR', 'LY', 'MG', 'MW', 'ML', 'MR', 'MU',
     'MA', 'MZ', 'NA', 'NE', 'NG', 'RW', 'ST', 'SN', 'SC', 'SL', 'SO', 'ZA', 'SS', 'SD', 'SZ', 'TZ',
@@ -64,7 +61,6 @@ HEALTHCARE_KEYWORDS = [
     'patient', 'treatment', 'disease', 'drug', 'dose', 'isotope', 'radio',
     'nuclear', 'pet', 'spect', 'immuno', 'assay', 'reagent', 'specimen',
     'sample', 'blood', 'plasma', 'serum', 'biobank', 'cryo', 'stem',
-    # Specific company names
     'marken', 'fisher', 'cardinal', 'patheon', 'organox', 'qiagen', 'abbott',
     'tosoh', 'leica', 'sophia', 'cerus', 'sirtex', 'lantheus', 'avid',
     'petnet', 'innervate', 'ndri', 'university', 'institut', 'pentec',
@@ -203,25 +199,21 @@ def is_healthcare(account_name, sheet_name=None):
     if any(excluded in lower for excluded in EXCLUDE_FROM_HEALTHCARE):
         return False
       
-    # Special rules by sheet
     if sheet_name == 'AMS':
-        return True  # AMS is always healthcare
+        return True
     if sheet_name == 'Aviation SVC':
-        return False  # Aviation SVC is always non-healthcare
+        return False
     
     lower = str(account_name).lower()
     
-    # Check for explicit non-healthcare first (higher priority)
     for keyword in NON_HEALTHCARE_KEYWORDS:
         if keyword in lower:
             return False
     
-    # Then check for healthcare
     for keyword in HEALTHCARE_KEYWORDS:
         if keyword in lower:
             return True
     
-    # Default to False for uncertain cases
     return False
 
 # ============================================================================
@@ -501,11 +493,9 @@ def create_enhanced_performance_tables(monthly_changes: pd.DataFrame, month: str
     
     col1, col2, col3 = st.columns(3)
     
-    # Revenue Performance with Volume info
     with col1:
         st.markdown("### 💰 Revenue Performance")
         
-        # Top 10 Revenue Increases
         top_revenue = month_data.nlargest(10, 'Revenue_Change')[
             ['Account', 'Revenue', 'Volume', 'Revenue_Change', 'Volume_Change']
         ].copy()
@@ -526,7 +516,6 @@ def create_enhanced_performance_tables(monthly_changes: pd.DataFrame, month: str
             
             st.dataframe(display_df.head(10), use_container_width=True, hide_index=True)
             
-            # Mini bar chart
             fig_bar = go.Figure()
             fig_bar.add_trace(go.Bar(
                 x=top_revenue['Revenue_Change'].head(5),
@@ -541,7 +530,6 @@ def create_enhanced_performance_tables(monthly_changes: pd.DataFrame, month: str
                                 xaxis=dict(visible=False), yaxis=dict(automargin=True))
             st.plotly_chart(fig_bar, use_container_width=True)
         
-        # Top 10 Revenue Decreases
         worst_revenue = month_data.nsmallest(10, 'Revenue_Change')[
             ['Account', 'Revenue', 'Volume', 'Revenue_Change', 'Volume_Change']
         ].copy()
@@ -576,7 +564,6 @@ def create_enhanced_performance_tables(monthly_changes: pd.DataFrame, month: str
                                 xaxis=dict(visible=False), yaxis=dict(automargin=True))
             st.plotly_chart(fig_bar, use_container_width=True)
     
-    # Volume Performance with Revenue info
     with col2:
         st.markdown("### 📦 Volume Performance")
         
@@ -648,7 +635,6 @@ def create_enhanced_performance_tables(monthly_changes: pd.DataFrame, month: str
                                 xaxis=dict(visible=False), yaxis=dict(automargin=True))
             st.plotly_chart(fig_bar, use_container_width=True)
     
-    # Pieces Performance with Revenue info
     with col3:
         st.markdown("### 📋 Pieces Performance")
         
@@ -792,7 +778,73 @@ def create_revenue_charts(processed_df: pd.DataFrame, sector: str):
         )
         st.plotly_chart(fig_top10, use_container_width=True)
 
-    # Chart: Net OTP by Volume (POD)
+
+def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, debug_mode: bool = False):
+    """Create complete dashboard view for a sector."""
+    if df.empty:
+        st.warning(f"No data available for {tab_name} sector.")
+        return
+    
+    processed_df = preprocess(df)
+    
+    if processed_df.empty:
+        st.warning(f"No valid data after preprocessing for {tab_name}.")
+        return
+    
+    vol_pod, pieces_pod, otp_pod, revenue_pod = monthly_frames(processed_df)
+    
+    gross_otp, net_otp, total_vol, total_exc, ctrl_exc, unctrl_exc, total_rev = calc_summary(processed_df)
+    
+    st.markdown("### 📊 Key Performance Indicators")
+    kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+    
+    with kpi1:
+        st.markdown(f'<div class="kpi"><div class="k-num">{gross_otp:.2f}%</div><div class="k-cap">Gross OTP</div></div>', 
+                    unsafe_allow_html=True)
+    with kpi2:
+        st.markdown(f'<div class="kpi"><div class="k-num">{net_otp:.2f}%</div><div class="k-cap">Net OTP</div></div>', 
+                    unsafe_allow_html=True)
+    with kpi3:
+        st.markdown(f'<div class="kpi"><div class="k-num">{total_vol:,}</div><div class="k-cap">Total Volume</div></div>', 
+                    unsafe_allow_html=True)
+    with kpi4:
+        st.markdown(f'<div class="kpi"><div class="k-num">{total_exc:,}</div><div class="k-cap">Exceptions</div></div>', 
+                    unsafe_allow_html=True)
+    with kpi5:
+        st.markdown(f'<div class="kpi"><div class="k-num">{_revenue_fmt(total_rev)}</div><div class="k-cap">Total Revenue</div></div>', 
+                    unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.plotly_chart(make_semi_gauge("Gross OTP", gross_otp), use_container_width=True)
+    with col2:
+        st.plotly_chart(make_semi_gauge("Net OTP", net_otp), use_container_width=True)
+    
+    st.markdown("---")
+    
+    create_revenue_charts(processed_df, tab_name)
+    
+    st.markdown("---")
+    
+    if not processed_df.empty and 'Month_Display' in processed_df.columns:
+        available_months = sorted(processed_df['Month_Display'].dropna().unique())
+        if len(available_months) > 0:
+            st.markdown("### 📈 Month-over-Month Performance Analysis")
+            selected_month = st.selectbox(
+                f"Select month for detailed analysis ({tab_name}):",
+                options=available_months,
+                index=len(available_months)-1,
+                key=f"{tab_name}_mom_month_select"
+            )
+            
+            monthly_changes = analyze_monthly_changes(processed_df)
+            if not monthly_changes.empty:
+                create_enhanced_performance_tables(monthly_changes, selected_month, tab_name)
+    
+    st.markdown("---")
+    
     st.subheader(f"{tab_name}: Controllable (Net) OTP by Volume — POD Month")
     if not vol_pod.empty and not otp_pod.empty:
         mv = vol_pod.merge(otp_pod[["Month_YYYY_MM","Net_OTP"]],
@@ -869,7 +921,6 @@ def create_revenue_charts(processed_df: pd.DataFrame, sector: str):
 
     st.markdown("---")
 
-    # Chart: Net OTP by Pieces (POD)
     st.subheader(f"{tab_name}: Controllable (Net) OTP by Pieces — POD Month")
     if not pieces_pod.empty and not otp_pod.empty:
         mp = pieces_pod.merge(otp_pod[["Month_YYYY_MM","Net_OTP"]],
@@ -946,7 +997,6 @@ def create_revenue_charts(processed_df: pd.DataFrame, sector: str):
 
     st.markdown("---")
 
-    # Chart: Gross vs Net OTP (POD)
     st.subheader(f"{tab_name}: Monthly OTP Trend (Gross vs Net) — POD Month")
     if not otp_pod.empty:
         otp_sorted = otp_pod.sort_values("Month_Sort")
@@ -1012,7 +1062,6 @@ def create_revenue_charts(processed_df: pd.DataFrame, sector: str):
     else:
         st.info("No monthly OTP trend available.")
 
-    # Dynamic Worst Accounts by Month
     st.subheader(f"{tab_name}: 5 Worst Accounts by Net OTP")
     
     if 'ACCT NM' in processed_df.columns:
@@ -1106,7 +1155,6 @@ def create_revenue_charts(processed_df: pd.DataFrame, sector: str):
     else:
         st.info("Column 'ACCT NM' not found; cannot compute worst accounts.")
 
-    # Optional QC breakdown
     if "QC_NAME_CLEAN" in processed_df.columns or "QC NAME" in processed_df.columns:
         qc_src = processed_df.copy()
         if "QC_NAME_CLEAN" not in qc_src.columns and "QC NAME" in qc_src.columns:
@@ -1124,7 +1172,6 @@ def create_revenue_charts(processed_df: pd.DataFrame, sector: str):
 
 st.title("Healthcare & Non-Healthcare Dashboard")
 
-# Sidebar
 with st.sidebar:
     st.markdown("### 📁 Data Upload")
     uploaded_file = st.file_uploader("Upload Excel (.xlsx) file", type=["xlsx"])
@@ -1153,7 +1200,6 @@ with st.sidebar:
     - Compact bar visualizations
     """)
 
-# Main content
 if not uploaded_file:
     st.info("""
     👆 **Please upload your Excel file to begin.**
@@ -1172,11 +1218,9 @@ if not uploaded_file:
     """)
     st.stop()
 
-# Process uploaded file
 with st.spinner("Processing Excel file..."):
     healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
 
-# Detailed validation info
 if debug_mode:
     with st.expander("🔍 Debug: Complete Data Flow"):
         st.write("**1. Sheets Read:**")
@@ -1207,7 +1251,6 @@ if debug_mode:
             for sheet, count in non_hc_sources.items():
                 st.write(f"   {sheet}: {count:,} rows")
 
-# Show processing statistics
 with st.expander("📈 Data Processing Statistics"):
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -1234,7 +1277,6 @@ with st.expander("📈 Data Processing Statistics"):
         else:
             st.warning(f"⚠️ Mismatch: {stats.get('status_filtered', 0) - total_processed} rows not categorized")
 
-# Create tabs
 tab1, tab2 = st.tabs(["🏥 Healthcare", "✈️ Non-Healthcare"])
 
 with tab1:
@@ -1285,7 +1327,4 @@ with tab2:
                     st.write("Month grouping (YYYY-MM):")
                     st.write(test_dates.dt.to_period("M").astype(str).to_list())
     
-create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
-# Healthcare vs Non-Healthcare Dashboard
-# Enhanced with professional Month-over-Month analysis
-
+    create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
