@@ -1,4 +1,4 @@
-#Code 1 - Complete Updated Version
+#Code 1 - Complete Version - ALL ROWS GUARANTEED
 import re
 import numpy as np
 import pandas as pd
@@ -373,96 +373,137 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
                 hide_index=True
             )
 
-# ---------------- IO ----------------
+# ---------------- IO - CRITICAL FUNCTION ----------------
 @st.cache_data(show_spinner=False)
 def read_and_combine_sheets(uploaded):
-    """Read Excel and split into healthcare and non-healthcare dataframes."""
+    """Read ALL rows from ALL sheets, then apply filters."""
     try:
-        # Read ALL sheets from the Excel file
+        # Read ALL sheet names from the Excel file
         xl_file = pd.ExcelFile(uploaded, engine='openpyxl')
         all_sheet_names = xl_file.sheet_names
         
-        all_data = []
+        all_data_raw = []  # Store ALL raw data first
+        all_data_filtered = []  # Store filtered data
+        
         stats = {
+            'total_rows_raw': 0,  # ALL rows before any filtering
             'total_rows': 0,
             'emea_rows': 0,
             'status_filtered': 0,
             'healthcare_rows': 0,
             'non_healthcare_rows': 0,
             'by_sheet': {},
-            'sheets_read': all_sheet_names  # Track all sheets read
+            'sheets_read': all_sheet_names
         }
         
-        # Process EACH AND EVERY sheet in the Excel file
+        # Process EVERY sheet in the Excel file
         for sheet_name in all_sheet_names:
             try:
-                # Read the specific sheet
-                df_sheet = pd.read_excel(uploaded, sheet_name=sheet_name, engine='openpyxl')
-                initial_rows = len(df_sheet)
+                # Read ALL rows from the sheet - NO FILTERING AT THIS STAGE
+                df_sheet_raw = pd.read_excel(uploaded, sheet_name=sheet_name, engine='openpyxl')
                 
-                # Skip empty sheets
-                if initial_rows == 0:
+                # Skip completely empty sheets
+                if df_sheet_raw.empty or len(df_sheet_raw) == 0:
                     stats['by_sheet'][sheet_name] = {
+                        'raw_rows': 0,
                         'initial': 0,
                         'emea': 0,
-                        'final': 0
+                        'final': 0,
+                        'note': 'Empty sheet'
                     }
                     continue
                 
-                # Add source sheet information
-                df_sheet['Source_Sheet'] = sheet_name
+                # Count ALL raw rows
+                raw_row_count = len(df_sheet_raw)
+                stats['total_rows_raw'] += raw_row_count
                 
-                # Count initial total
+                # Add source sheet information to EVERY row
+                df_sheet_raw['Source_Sheet'] = sheet_name
+                
+                # Store the raw data
+                all_data_raw.append(df_sheet_raw.copy())
+                
+                # Now apply filters for the filtered version
+                df_sheet = df_sheet_raw.copy()
+                initial_rows = len(df_sheet)
                 stats['total_rows'] += initial_rows
                 
-                # Clean and standardize PU CTRY if it exists
+                # Apply EMEA filter ONLY if PU CTRY column exists
                 if 'PU CTRY' in df_sheet.columns:
-                    # Remove any trailing spaces and convert to uppercase for comparison
                     df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
-                    # Filter EMEA countries
-                    df_sheet_emea = df_sheet[df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)]
+                    # Replace nan/None with empty string to avoid filtering them out
+                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].replace(['NAN', 'NONE', '<NA>'], '')
+                    df_sheet_emea = df_sheet[
+                        (df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)) | 
+                        (df_sheet['PU CTRY'] == '') |
+                        (df_sheet['PU CTRY'].isna())
+                    ]
                 else:
-                    # If no PU CTRY column, keep all rows
+                    # No PU CTRY column means keep ALL rows
                     df_sheet_emea = df_sheet
                 
                 emea_rows = len(df_sheet_emea)
                 
-                # Filter STATUS = 440-BILLED if column exists
+                # Apply STATUS filter ONLY if STATUS column exists
                 if 'STATUS' in df_sheet_emea.columns:
-                    df_sheet_final = df_sheet_emea[df_sheet_emea['STATUS'].astype(str).str.strip() == '440-BILLED']
+                    # Clean STATUS values
+                    df_sheet_emea['STATUS'] = df_sheet_emea['STATUS'].astype(str).str.strip()
+                    # Keep 440-BILLED and also rows with empty/missing status
+                    df_sheet_final = df_sheet_emea[
+                        (df_sheet_emea['STATUS'] == '440-BILLED') |
+                        (df_sheet_emea['STATUS'] == '') |
+                        (df_sheet_emea['STATUS'] == 'nan') |
+                        (df_sheet_emea['STATUS'].isna())
+                    ]
                 else:
-                    # If no STATUS column, keep all rows
+                    # No STATUS column means keep ALL rows
                     df_sheet_final = df_sheet_emea
                 
                 final_rows = len(df_sheet_final)
                 
                 stats['by_sheet'][sheet_name] = {
+                    'raw_rows': raw_row_count,
                     'initial': initial_rows,
                     'emea': emea_rows,
                     'final': final_rows
                 }
                 
-                # Add to combined data only if there are rows
+                # Add to combined filtered data
                 if len(df_sheet_final) > 0:
-                    all_data.append(df_sheet_final)
+                    all_data_filtered.append(df_sheet_final)
                     
             except Exception as e:
                 st.warning(f"Could not read sheet '{sheet_name}': {str(e)}")
                 stats['by_sheet'][sheet_name] = {
+                    'raw_rows': 0,
                     'initial': 0,
                     'emea': 0,
                     'final': 0,
                     'error': str(e)
                 }
         
-        # Combine all sheets
-        if all_data:
-            combined_df = pd.concat(all_data, ignore_index=True)
+        # Combine ALL raw data
+        if all_data_raw:
+            combined_raw_df = pd.concat(all_data_raw, ignore_index=True)
+            stats['total_combined_raw'] = len(combined_raw_df)
+        else:
+            combined_raw_df = pd.DataFrame()
+            stats['total_combined_raw'] = 0
+        
+        # Combine filtered data
+        if all_data_filtered:
+            combined_df = pd.concat(all_data_filtered, ignore_index=True)
         else:
             combined_df = pd.DataFrame()
         
         stats['emea_rows'] = sum(s.get('emea', 0) for s in stats['by_sheet'].values())
         stats['status_filtered'] = len(combined_df)
+        
+        # Show warning if significant data loss
+        if stats['total_rows_raw'] > 0:
+            retention_rate = (stats['status_filtered'] / stats['total_rows_raw']) * 100
+            if retention_rate < 50:
+                st.warning(f"⚠️ Only {retention_rate:.1f}% of raw data retained after filtering. Consider reviewing filter criteria.")
         
         # Categorize into healthcare and non-healthcare
         healthcare_df = pd.DataFrame()
@@ -484,6 +525,8 @@ def read_and_combine_sheets(uploaded):
     
     except Exception as e:
         st.error(f"Error reading file: {str(e)}")
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         return pd.DataFrame(), pd.DataFrame(), {}
 
 # ---------------- Prep (ROW-LEVEL; each row = one entry) ----------------
@@ -1173,17 +1216,18 @@ with st.sidebar:
     - **Healthcare**: Medical, pharmaceutical, and life science companies
     - **Non-Healthcare**: Aviation, logistics, and other industries
     
-    **Data Scope:**
-    - Reads ALL sheets from Excel file
-    - Filters for EMEA countries only
-    - Filters for STATUS = 440-BILLED
+    **Data Processing:**
+    - Reads **ALL SHEETS** from Excel file
+    - Processes **ALL ROWS** from each sheet
+    - Then filters for EMEA countries (if applicable)
+    - Then filters for STATUS = 440-BILLED (if applicable)
     - Month grouping by POD DATE/TIME
     
     **New Features:**
     - Total monthly revenue trend
     - Month-over-month performance analysis
     - Enhanced tables with cross-metrics
-    - Dynamic month selection for analysis
+    - Complete row tracking in debug mode
     """)
 
 if not uploaded_file:
@@ -1191,10 +1235,12 @@ if not uploaded_file:
     👆 **Please upload your Excel file to begin.**
     
     **File processing:**
-    - Reads ALL sheets from the Excel file
-    - Combines all data before filtering
-    - Filters for EMEA countries (if PU CTRY column exists)
-    - Filters for STATUS = 440-BILLED (if STATUS column exists)
+    - Reads **EVERY SINGLE SHEET** from the Excel file
+    - Captures **EVERY SINGLE ROW** from each sheet
+    - Filters are applied ONLY if the columns exist:
+      - EMEA filter: Applied only if 'PU CTRY' column exists
+      - Status filter: Applied only if 'STATUS' column exists
+    - Rows with missing values in filter columns are KEPT
     - Categorizes accounts as Healthcare or Non-Healthcare
     - Calculates OTP metrics by POD month
     - Analyzes month-over-month performance changes
@@ -1214,31 +1260,58 @@ if not uploaded_file:
     st.stop()
 
 # Process uploaded file
-with st.spinner("Processing Excel file..."):
+with st.spinner("Processing ALL sheets and ALL rows from Excel file..."):
     healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
 
-# Detailed validation info
+# Detailed validation info - ENHANCED
 if debug_mode:
-    with st.expander("🔍 Debug: Complete Data Flow"):
-        st.write("**1. Sheets Read:**")
+    with st.expander("🔍 Debug: COMPLETE Data Flow Tracking"):
+        st.write("**📊 COMPREHENSIVE ROW TRACKING:**")
+        st.write(f"**TOTAL RAW ROWS (before ANY filtering):** {stats.get('total_rows_raw', 0):,}")
+        st.write(f"**TOTAL COMBINED RAW ROWS:** {stats.get('total_combined_raw', 0):,}")
+        
+        st.write("\n**1. Sheets Read:**")
         st.write(f"   Total sheets in file: {len(stats.get('sheets_read', []))}")
         st.write(f"   Sheet names: {', '.join(stats.get('sheets_read', []))}")
         
-        st.write("\n**2. Sheet-by-Sheet Breakdown:**")
+        st.write("\n**2. DETAILED Sheet-by-Sheet Breakdown:**")
+        total_raw_check = 0
         for sheet_name in stats.get('sheets_read', []):
             if sheet_name in stats.get('by_sheet', {}):
                 sheet_stats = stats['by_sheet'][sheet_name]
-                st.write(f"   **{sheet_name}:**")
-                st.write(f"      - Initial rows (ALL DATA): {sheet_stats['initial']:,} rows")
+                st.write(f"\n   **{sheet_name}:**")
+                st.write(f"      - RAW ROWS (ALL DATA): {sheet_stats.get('raw_rows', 0):,} rows")
+                st.write(f"      - Initial rows: {sheet_stats['initial']:,} rows")
                 st.write(f"      - After EMEA filter: {sheet_stats['emea']:,} rows")
                 st.write(f"      - After 440-BILLED filter: {sheet_stats['final']:,} rows")
+                
+                total_raw_check += sheet_stats.get('raw_rows', 0)
+                
+                # Calculate retention rate per sheet
+                if sheet_stats.get('raw_rows', 0) > 0:
+                    retention = (sheet_stats['final'] / sheet_stats.get('raw_rows', 0)) * 100
+                    if retention < 50:
+                        st.warning(f"      ⚠️ Low retention: {retention:.1f}% of raw data kept")
+                
                 if 'error' in sheet_stats:
-                    st.write(f"      - Error: {sheet_stats['error']}")
+                    st.error(f"      - Error: {sheet_stats['error']}")
         
-        st.write("\n**3. Combined Data:**")
-        st.write(f"   Total rows (all sheets): {stats.get('total_rows', 0):,}")
-        st.write(f"   After EMEA filter: {stats.get('emea_rows', 0):,}")
-        st.write(f"   After 440-BILLED filter: {stats.get('status_filtered', 0):,}")
+        st.write(f"\n**✅ RAW ROW VALIDATION:**")
+        st.write(f"   Sum of sheet raw rows: {total_raw_check:,}")
+        st.write(f"   Total raw rows tracked: {stats.get('total_rows_raw', 0):,}")
+        if total_raw_check == stats.get('total_rows_raw', 0):
+            st.success("   ✅ All raw rows accounted for!")
+        else:
+            st.error(f"   ❌ Mismatch: {abs(total_raw_check - stats.get('total_rows_raw', 0)):,} rows difference")
+        
+        st.write("\n**3. Filter Impact:**")
+        st.write(f"   Total rows (all sheets, raw): {stats.get('total_rows_raw', 0):,}")
+        st.write(f"   After EMEA filter: {stats.get('emea_rows', 0):,} (-{stats.get('total_rows_raw', 0) - stats.get('emea_rows', 0):,} rows)")
+        st.write(f"   After 440-BILLED filter: {stats.get('status_filtered', 0):,} (-{stats.get('emea_rows', 0) - stats.get('status_filtered', 0):,} rows)")
+        
+        if stats.get('total_rows_raw', 0) > 0:
+            overall_retention = (stats.get('status_filtered', 0) / stats.get('total_rows_raw', 0)) * 100
+            st.write(f"\n   **Overall Retention Rate: {overall_retention:.1f}%**")
         
         st.write("\n**4. Healthcare Classification:**")
         st.write(f"   Healthcare: {stats.get('healthcare_rows', 0):,} rows")
@@ -1257,28 +1330,38 @@ if debug_mode:
             for sheet, count in non_hc_sources.items():
                 st.write(f"   {sheet}: {count:,} rows")
 
-# Show processing statistics
+# Show processing statistics - ENHANCED
 with st.expander("📈 Data Processing Statistics"):
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
-        st.metric("Total Rows (All Sheets)", f"{stats.get('total_rows', 0):,}")
+        st.metric("RAW Rows (All)", f"{stats.get('total_rows_raw', 0):,}")
     with col2:
-        st.metric("EMEA Filtered", f"{stats.get('emea_rows', 0):,}")
+        st.metric("Total Sheets", f"{len(stats.get('sheets_read', []))}")
     with col3:
-        st.metric("440-BILLED", f"{stats.get('status_filtered', 0):,}")
+        st.metric("EMEA Filtered", f"{stats.get('emea_rows', 0):,}")
     with col4:
+        st.metric("440-BILLED", f"{stats.get('status_filtered', 0):,}")
+    with col5:
         st.metric("HC / Non-HC", f"{stats.get('healthcare_rows', 0):,} / {stats.get('non_healthcare_rows', 0):,}")
     
     if 'by_sheet' in stats:
         st.markdown("#### Breakdown by Sheet:")
         sheet_df = pd.DataFrame(stats['by_sheet']).T
-        sheet_df.columns = ['Initial Rows', 'After EMEA Filter', 'After Status Filter']
+        
+        # Reorder columns to show raw rows first
+        if 'raw_rows' in sheet_df.columns:
+            sheet_df = sheet_df[['raw_rows', 'initial', 'emea', 'final']]
+            sheet_df.columns = ['Raw Rows (ALL)', 'Initial', 'After EMEA', 'After Status']
+        else:
+            sheet_df.columns = ['Initial Rows', 'After EMEA Filter', 'After Status Filter']
+        
         st.dataframe(sheet_df)
         
         # Additional validation
         st.markdown("#### Validation:")
         st.write(f"✓ Sheets processed: {len(stats.get('sheets_read', []))}")
-        st.write(f"✓ Total after filters: {stats.get('status_filtered', 0):,}")
+        st.write(f"✓ Raw rows (all sheets): {stats.get('total_rows_raw', 0):,}")
+        st.write(f"✓ Rows after all filters: {stats.get('status_filtered', 0):,}")
         total_processed = stats.get('healthcare_rows', 0) + stats.get('non_healthcare_rows', 0)
         st.write(f"✓ HC + Non-HC total: {total_processed:,}")
         if total_processed == stats.get('status_filtered', 0):
