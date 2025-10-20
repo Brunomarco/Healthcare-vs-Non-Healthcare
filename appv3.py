@@ -725,13 +725,13 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
         with c1: 
             adjusted_otp = max(gross_otp, net_otp) if pd.notna(gross_otp) and pd.notna(net_otp) else (net_otp if pd.notna(net_otp) else gross_otp)
             st.plotly_chart(make_semi_gauge("Adjusted OTP", adjusted_otp),
-                           use_container_width=True, config={"displayModeBar": False})
+                           use_container_width=True, config={"displayModeBar": False}, key=f"{tab_name}_gauge_adjusted")
         with c2: 
             st.plotly_chart(make_semi_gauge("Controllable OTP", net_otp),
-                           use_container_width=True, config={"displayModeBar": False})
+                           use_container_width=True, config={"displayModeBar": False}, key=f"{tab_name}_gauge_net")
         with c3: 
             st.plotly_chart(make_semi_gauge("Raw OTP", gross_otp),
-                           use_container_width=True, config={"displayModeBar": False})
+                           use_container_width=True, config={"displayModeBar": False}, key=f"{tab_name}_gauge_gross" )
 
     with st.expander("Month & logic"):
         st.markdown(f"""
@@ -830,7 +830,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                     xaxis=dict(title="Month", tickangle=-30),
                     yaxis=dict(title="Revenue ($)", gridcolor=GRID, showgrid=True)
                 )
-                st.plotly_chart(fig_total_trend, use_container_width=True)
+                st.plotly_chart(fig_total_trend, use_container_width=True, key=f"{tab_name}_rev_trend")
                 
                 # Summary stats for revenue
                 col1, col2, col3, col4 = st.columns(4)
@@ -933,7 +933,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 120], showgrid=False),
             barmode="overlay"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=f"{tab_name}_net_by_vol" )
     else:
         st.info("No monthly volume available.")
 
@@ -1015,7 +1015,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             yaxis2=dict(title="Net OTP (%)", overlaying="y", side="right", range=[0, 120], showgrid=False),
             barmode="overlay"
         )
-        st.plotly_chart(figp, use_container_width=True)
+        st.plotly_chart(figp, use_container_width=True, key=f"{tab_name}_net_by_pcs")
     else:
         st.info("No monthly PIECES available.")
 
@@ -1088,7 +1088,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
             xaxis=dict(title="", tickangle=-30, tickmode="array", tickvals=x, ticktext=x, automargin=True),
             yaxis=dict(title="OTP (%)", range=[0, 120], gridcolor=GRID, showgrid=True)
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True, key=f"{tab_name}_otp_trend")
     else:
         st.info("No monthly OTP trend available.")
 
@@ -1172,7 +1172,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                                 xaxis=dict(title="Net OTP (%)", range=[0, 110], gridcolor=GRID, showgrid=True),
                                 yaxis=dict(title="", automargin=True)
                             )
-                            st.plotly_chart(figw, use_container_width=True)
+                            st.plotly_chart(figw, use_container_width=True, key=f"{tab_name}_worst5_chart")
                             
                             # Compact table below for auditing
                             st.caption(f"Worst 5 accounts — {selected_period.strftime('%B %Y')} (Net OTP and Volume)")
@@ -1180,7 +1180,8 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
                                 worst[['ACCT NM', 'Net_OTP', 'Volume']].rename(
                                     columns={'ACCT NM':'Account', 'Net_OTP':'Net OTP (%)'}
                                 ),
-                                use_container_width=True
+                                use_container_width=True,
+                                key=f"{tab_name}_worst5_table"
                             )
                         else:
                             st.info(f"No non-null, >0% Net OTP accounts for {selected_period.strftime('%B %Y')}.")
