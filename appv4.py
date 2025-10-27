@@ -1274,24 +1274,109 @@ if not uploaded_file:
 with st.spinner("Processing ALL sheets and ALL rows from Excel file..."):
     healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
 
-# ---------------- NEW: Collect ALL accounts from ALL sheets ----------------
+# ---------------- NEW: Collect ALL accounts from ALL sheets WITH FILTER REASONS ----------------
 all_accounts_data = []
 xls = pd.ExcelFile(uploaded_file)
 for sheet_name in xls.sheet_names:
     try:
         sheet_df = pd.read_excel(xls, sheet_name=sheet_name)
         if 'ACCT NM' in sheet_df.columns:
-            # Get unique accounts from this sheet with their row count
-            # Use dropna=False to include rows with missing account names
-            accounts_in_sheet = sheet_df.groupby('ACCT NM', dropna=False).size().reset_index(name='Row_Count')
-            accounts_in_sheet['Source_Sheet'] = sheet_name
+            # For each account, track why rows are filtered out
+            accounts_in_sheet = []
+            
+            for account_name in sheet_df['ACCT NM'].unique():
+                # Get all rows for this account
+                account_rows = sheet_df[sheet_df['ACCT NM'] == account_name] if pd.notna(account_name) else sheet_df[sheet_df['ACCT NM'].isna()]
+                total_rows = len(account_rows)
+                
+                filter_reasons = []
+                current_rows = account_rows.copy()
+                
+                # Check for missing POD DATE/TIME (required for analysis)
+                missing_date_count = 0
+                if 'POD DATE/TIME' in current_rows.columns:
+                    missing_date_mask = current_rows['POD DATE/TIME'].isna()
+                    missing_date_count = missing_date_mask.sum()
+                    if missing_date_count > 0:
+                        filter_reasons.append(f"Missing POD DATE ({missing_date_count} rows)")
+                    # Remove rows with missing dates for further filtering
+                    current_rows = current_rows[~missing_date_mask]
+                else:
+                    # No POD DATE column at all
+                    filter_reasons.append(f"No POD DATE column ({total_rows} rows)")
+                    current_rows = pd.DataFrame()  # All rows filtered
+                
+                # Check EMEA filter (on remaining rows)
+                emea_filtered = 0
+                if len(current_rows) > 0 and 'PU CTRY' in current_rows.columns:
+                    current_rows_copy = current_rows.copy()
+                    current_rows_copy['PU CTRY'] = current_rows_copy['PU CTRY'].astype(str).str.strip().str.upper()
+                    current_rows_copy['PU CTRY'] = current_rows_copy['PU CTRY'].replace(['NAN', 'NONE', '<NA>'], '')
+                    emea_mask = (
+                        (current_rows_copy['PU CTRY'].isin(EMEA_COUNTRIES)) | 
+                        (current_rows_copy['PU CTRY'] == '') |
+                        (current_rows_copy['PU CTRY'].isna())
+                    )
+                    emea_filtered = (~emea_mask).sum()
+                    if emea_filtered > 0:
+                        filter_reasons.append(f"Not EMEA ({emea_filtered} rows)")
+                    current_rows = current_rows[emea_mask]
+                
+                # Check STATUS filter (on remaining rows)
+                status_filtered = 0
+                if len(current_rows) > 0 and 'STATUS' in current_rows.columns:
+                    current_rows_copy = current_rows.copy()
+                    current_rows_copy['STATUS'] = current_rows_copy['STATUS'].astype(str).str.strip()
+                    status_mask = (
+                        (current_rows_copy['STATUS'] == '440-BILLED') |
+                        (current_rows_copy['STATUS'] == '') |
+                        (current_rows_copy['STATUS'] == 'nan') |
+                        (current_rows_copy['STATUS'].isna())
+                    )
+                    status_filtered = (~status_mask).sum()
+                    if status_filtered > 0:
+                        filter_reasons.append(f"Not 440-BILLED ({status_filtered} rows)")
+                    current_rows = current_rows[status_mask]
+                
+                # Check for other missing critical data in remaining rows
+                if len(current_rows) > 0:
+                    # Check for missing REVENUE/TOTAL CHARGES
+                    if 'TOTAL CHARGES' in current_rows.columns:
+                        missing_revenue = current_rows['TOTAL CHARGES'].isna().sum()
+                        if missing_revenue > 0:
+                            filter_reasons.append(f"Missing TOTAL CHARGES ({missing_revenue} rows)")
+                    
+                    # Check for missing HAWB (shipment ID)
+                    if 'HAWB' in current_rows.columns:
+                        missing_hawb = current_rows['HAWB'].isna().sum()
+                        if missing_hawb > 0:
+                            filter_reasons.append(f"Missing HAWB ({missing_hawb} rows)")
+                
+                rows_after_filters = len(current_rows)
+                
+                # Determine filter reason text
+                if not filter_reasons:
+                    filter_reason_text = "✓ Passed all filters"
+                else:
+                    filter_reason_text = "; ".join(filter_reasons)
+                
+                accounts_in_sheet.append({
+                    'ACCT NM': account_name,
+                    'Row_Count': total_rows,
+                    'Rows_After_Filters': rows_after_filters,
+                    'Filter_Reason': filter_reason_text,
+                    'Source_Sheet': sheet_name
+                })
+            
+            # Convert to dataframe
+            accounts_df = pd.DataFrame(accounts_in_sheet)
             
             # Classify each account
-            accounts_in_sheet['Classification'] = accounts_in_sheet['ACCT NM'].apply(
+            accounts_df['Classification'] = accounts_df['ACCT NM'].apply(
                 lambda x: 'Healthcare' if is_healthcare(x, sheet_name) else 'Non-Healthcare'
             )
             
-            all_accounts_data.append(accounts_in_sheet)
+            all_accounts_data.append(accounts_df)
     except Exception as e:
         pass  # Skip sheets with errors
 
@@ -1303,8 +1388,10 @@ if all_accounts_data:
     # Use dropna=False to include rows with missing account names
     all_accounts_summary = all_accounts_df.groupby('ACCT NM', dropna=False).agg({
         'Row_Count': 'sum',
+        'Rows_After_Filters': 'sum',
         'Classification': 'first',
-        'Source_Sheet': lambda x: ', '.join(sorted(set(x)))
+        'Source_Sheet': lambda x: ', '.join(sorted(set(x))),
+        'Filter_Reason': lambda x: ' | '.join([r for r in set(x) if r != "✓ Passed all filters"]) or "✓ Passed all filters"
     }).reset_index()
     
     # Check which accounts are actually used in the filtered data
@@ -1492,10 +1579,17 @@ with tab2:
 with tab3:
     st.markdown("## 📋 All Accounts Overview")
     st.markdown("""
-    This tab shows **ALL accounts** from **ALL sheets** in the Excel file, regardless of filtering:
+    This tab shows **ALL accounts** from **ALL sheets** in the Excel file with complete filtering details:
     - 🟢 **Green**: Accounts classified as **Healthcare** and used in filtered data
     - 🔵 **Blue**: Accounts classified as **Non-Healthcare** and used in filtered data
-    - ⚪ **No highlight**: Accounts that exist but are **not used** in filtered data (filtered out by EMEA or 440-BILLED criteria)
+    - ⚪ **No highlight**: Accounts that exist but are **not used** - see "Why Filtered Out?" for detailed reasons
+    
+    **Filter Reasons Include:**
+    - ✓ Passed all filters
+    - ❌ Missing POD DATE (required for analysis)
+    - ❌ Not EMEA (country filter)
+    - ❌ Not 440-BILLED (status filter)
+    - ❌ Missing TOTAL CHARGES or HAWB (data quality issues)
     """)
     
     if not all_accounts_summary.empty:
@@ -1560,13 +1654,23 @@ with tab3:
         
         # Format the display values
         display_df['Row_Count'] = display_df['Row_Count'].apply(lambda x: f"{x:,}")
+        display_df['Rows_After_Filters'] = display_df['Rows_After_Filters'].apply(lambda x: f"{x:,}")
         display_df['Used_in_Filter'] = display_df['Used_in_Filter'].map({True: '✓ Yes', False: '✗ No'})
+        
+        # Reorder and rename columns to show filter reason
+        display_df = display_df[[
+            'ACCT NM', 'Row_Count', 'Rows_After_Filters', 'Classification', 
+            'Source_Sheet', 'Used_in_Filter', 'Filter_Reason'
+        ]]
+        
         display_df = display_df.rename(columns={
             'ACCT NM': 'Account Name',
-            'Row_Count': 'Total Rows (All Sheets)',
+            'Row_Count': 'Total Rows',
+            'Rows_After_Filters': 'Rows After Filters',
             'Classification': 'Classification',
             'Source_Sheet': 'Found in Sheets',
-            'Used_in_Filter': 'Used in Filtered Data'
+            'Used_in_Filter': 'Used?',
+            'Filter_Reason': 'Why Filtered Out?'
         })
         
         # Create styling function that uses indices to access original values
@@ -1590,17 +1694,44 @@ with tab3:
                 non_hc_used = len(used_df[used_df['Classification'] == 'Non-Healthcare'])
                 st.write(f"- **Healthcare accounts used:** {hc_used:,}")
                 st.write(f"- **Non-Healthcare accounts used:** {non_hc_used:,}")
-                st.write(f"- **Total rows in filtered data:** {used_df['Row_Count'].sum():,}")
+                st.write(f"- **Total rows in filtered data:** {used_df['Rows_After_Filters'].sum():,}")
             
             st.markdown("#### Accounts Filtered Out (Not Used):")
             unused_df = all_accounts_summary[all_accounts_summary['Used_in_Filter'] == False].copy()
             if not unused_df.empty:
                 hc_unused = len(unused_df[unused_df['Classification'] == 'Healthcare'])
                 non_hc_unused = len(unused_df[unused_df['Classification'] == 'Non-Healthcare'])
+                total_filtered_rows = unused_df['Row_Count'].sum()
+                total_surviving_rows = unused_df['Rows_After_Filters'].sum()
+                
                 st.write(f"- **Healthcare accounts filtered out:** {hc_unused:,}")
                 st.write(f"- **Non-Healthcare accounts filtered out:** {non_hc_unused:,}")
-                st.write(f"- **Total rows filtered out:** {unused_df['Row_Count'].sum():,}")
-                st.info("💡 These accounts were removed by EMEA country filter or 440-BILLED status filter")
+                st.write(f"- **Total rows from these accounts:** {total_filtered_rows:,}")
+                st.write(f"- **Rows that passed filters:** {total_surviving_rows:,}")
+                st.write(f"- **Rows actually filtered out:** {total_filtered_rows - total_surviving_rows:,}")
+                
+                # Analyze filter reasons
+                st.markdown("#### Why Accounts Were Filtered Out:")
+                
+                # Count by filter reason type
+                missing_date_count = unused_df[unused_df['Filter_Reason'].str.contains('Missing POD DATE|No POD DATE', na=False)].shape[0]
+                emea_count = unused_df[unused_df['Filter_Reason'].str.contains('Not EMEA', na=False)].shape[0]
+                status_count = unused_df[unused_df['Filter_Reason'].str.contains('Not 440-BILLED', na=False)].shape[0]
+                missing_revenue_count = unused_df[unused_df['Filter_Reason'].str.contains('Missing TOTAL CHARGES', na=False)].shape[0]
+                missing_hawb_count = unused_df[unused_df['Filter_Reason'].str.contains('Missing HAWB', na=False)].shape[0]
+                
+                if missing_date_count > 0:
+                    st.write(f"   - **Missing POD DATE (required):** {missing_date_count:,} accounts")
+                if emea_count > 0:
+                    st.write(f"   - **Not in EMEA countries:** {emea_count:,} accounts")
+                if status_count > 0:
+                    st.write(f"   - **Not 440-BILLED status:** {status_count:,} accounts")
+                if missing_revenue_count > 0:
+                    st.write(f"   - **Missing TOTAL CHARGES:** {missing_revenue_count:,} accounts")
+                if missing_hawb_count > 0:
+                    st.write(f"   - **Missing HAWB:** {missing_hawb_count:,} accounts")
+                
+                st.info("💡 See the 'Why Filtered Out?' column in the table above for detailed reasons per account")
         
         # Show sample accounts from each category
         with st.expander("🔍 Sample Accounts by Category"):
@@ -1622,10 +1753,11 @@ with tab3:
                 hc_unused_sample = all_accounts_summary[
                     (all_accounts_summary['Classification'] == 'Healthcare') & 
                     (all_accounts_summary['Used_in_Filter'] == False)
-                ]['ACCT NM'].head(5).tolist()
-                if hc_unused_sample:
-                    for acc in hc_unused_sample:
-                        st.write(f"⚪ {acc}")
+                ].head(5)
+                if not hc_unused_sample.empty:
+                    for _, row in hc_unused_sample.iterrows():
+                        st.write(f"⚪ {row['ACCT NM']}")
+                        st.caption(f"   └─ {row['Filter_Reason']}")
                 else:
                     st.write("No healthcare accounts filtered out")
             
@@ -1645,10 +1777,11 @@ with tab3:
                 non_hc_unused_sample = all_accounts_summary[
                     (all_accounts_summary['Classification'] == 'Non-Healthcare') & 
                     (all_accounts_summary['Used_in_Filter'] == False)
-                ]['ACCT NM'].head(5).tolist()
-                if non_hc_unused_sample:
-                    for acc in non_hc_unused_sample:
-                        st.write(f"⚪ {acc}")
+                ].head(5)
+                if not non_hc_unused_sample.empty:
+                    for _, row in non_hc_unused_sample.iterrows():
+                        st.write(f"⚪ {row['ACCT NM']}")
+                        st.caption(f"   └─ {row['Filter_Reason']}")
                 else:
                     st.write("No non-healthcare accounts filtered out")
     else:
