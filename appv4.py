@@ -1,4 +1,4 @@
-#Code 2 - Enhanced Version with All Accounts Overview Tab
+#Code 1 - Complete Version - ALL ROWS GUARANTEED + Account Overview Tab
 import re
 import numpy as np
 import pandas as pd
@@ -20,6 +20,8 @@ SLATE = "#334155"
 GRID  = "#e5e7eb"
 RED   = "#dc2626"
 EMERALD = "#059669"
+HEALTHCARE_COLOR = "#10b981"  # Green for healthcare
+NON_HEALTHCARE_COLOR = "#3b82f6"  # Blue for non-healthcare
 
 st.markdown("""
 <style>
@@ -37,9 +39,6 @@ h2 {color:#0b1f44;font-weight:700;margin-top:1.2rem;margin-bottom:.6rem;}
 .dataframe {font-size: 14px !important;}
 .dataframe td {padding: 8px !important;}
 .dataframe th {padding: 10px !important; background-color: #f3f4f6 !important; font-weight: 600 !important;}
-.healthcare-row { background-color: #d4f4dd !important; }
-.non-healthcare-row { background-color: #d6e5ff !important; }
-.unused-row { background-color: #f9f9f9 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -138,12 +137,10 @@ def is_healthcare(account_name, sheet_name=None):
     """Determine if an account is healthcare-related."""
     if not account_name:
         return False
-    
-    # Note: Removed the exclusion list to ensure proper categorization
-    # EXCLUDE_FROM_HEALTHCARE = {"avid", "lantheus", "life"}  
-    # lower = str(account_name).strip().lower()
-    # if any(excluded in lower for excluded in EXCLUDE_FROM_HEALTHCARE):
-    #     return False
+    EXCLUDE_FROM_HEALTHCARE = {"avid", "lantheus", "life"}  # accounts you want out of Healthcare
+    lower = str(account_name).strip().lower()
+    if any(excluded in lower for excluded in EXCLUDE_FROM_HEALTHCARE):
+        return False
       
     # Special rules by sheet
     if sheet_name == 'AMS':
@@ -167,540 +164,348 @@ def is_healthcare(account_name, sheet_name=None):
     return False
 
 def make_semi_gauge(title: str, value: float) -> go.Figure:
-    """Semi-circular gauge chart."""
-    if value >= 80:
-        color = "#10b981"
-    elif value >= 60:
-        color = "#f59e0b"
-    else:
-        color = "#ef4444"
-    
+    """Semi-circular gauge for OTP."""
     fig = go.Figure(go.Indicator(
-        mode="gauge+number",
+        mode="gauge+number+delta",
         value=value,
-        title={"text": title, "font": {"size": 18, "color": SLATE}},
-        number={"suffix": "%", "font": {"size": 36, "color": NAVY}},
+        domain={'x':[0,1],'y':[0,1]},
+        title={'text': title, 'font':{'size':16,'color':NAVY}},
+        delta={'reference': OTP_TARGET, 'increasing':{'color':GREEN},'decreasing':{'color':RED}},
+        number={'suffix':'%','font':{'size':28,'weight':'bold','color':NAVY}},
         gauge={
-            "axis": {"range": [0, 100], "tickcolor": GRID},
-            "bar": {"color": color},
-            "bgcolor": "white",
-            "borderwidth": 2,
-            "bordercolor": GRID,
-            "steps": [
-                {"range": [0, 60], "color": "#fee2e2"},
-                {"range": [60, 80], "color": "#fed7aa"},
-                {"range": [80, 100], "color": "#d1fae5"}
+            'axis':{'range':[0,100],'tickcolor':SLATE,'tickfont':{'size':10}},
+            'bar':{'color':NAVY,'thickness':0.3},
+            'steps':[
+                {'range':[0,OTP_TARGET],'color':RED},
+                {'range':[OTP_TARGET,100],'color':GREEN}
             ],
-            "threshold": {
-                "line": {"color": "red", "width": 4},
-                "thickness": 0.75,
-                "value": OTP_TARGET
+            'threshold':{
+                'line':{'color':GOLD,'width':4},
+                'thickness':0.75,
+                'value':OTP_TARGET
             }
         }
     ))
     fig.update_layout(
-        height=250,
-        margin=dict(l=20, r=20, t=40, b=20),
-        paper_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Inter, sans-serif"}
+        height=240,
+        margin=dict(t=60,b=30,l=30,r=30),
+        paper_bgcolor="#fff",
+        font={'family':"Arial",'color':NAVY}
     )
     return fig
 
-def create_dashboard_view(df: pd.DataFrame, sector: str, otp_target: float, debug_mode: bool = False):
-    """Create the dashboard view for a sector."""
+def get_sheets_dict(fl, emea_set: set):
+    """
+    Read ALL sheets, track RAW ROWS (before any filter).
+    Return (combined_df, stats).
+    """
+    xls = pd.ExcelFile(fl)
+    sheets_read = []
+    sheet_stats = {}
+    dfs = []
+    total_raw = 0
+    
+    for sn in xls.sheet_names:
+        try:
+            raw = pd.read_excel(xls, sheet_name=sn)
+            raw_count = len(raw)
+            total_raw += raw_count
+            
+            df = raw.copy()
+            init_len = len(df)
+            
+            # EMEA filter
+            if 'D CTRY' in df.columns:
+                df['D CTRY'] = df['D CTRY'].astype(str).str.strip().str.upper()
+                df = df[df['D CTRY'].isin(emea_set)].copy()
+            emea_len = len(df)
+            
+            # Status filter
+            if '440-BILLED' in df.columns:
+                df = df[df['440-BILLED'].notna()].copy()
+            final_len = len(df)
+            
+            # Add source sheet
+            df['Source_Sheet'] = sn
+            dfs.append(df)
+            sheets_read.append(sn)
+            
+            sheet_stats[sn] = {
+                'raw_rows': raw_count,
+                'initial': init_len,
+                'emea': emea_len,
+                'final': final_len
+            }
+            
+        except Exception as e:
+            sheet_stats[sn] = {'error': str(e)}
+    
+    combined = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    
+    stats = {
+        'sheets_read': sheets_read,
+        'by_sheet': sheet_stats,
+        'total_rows_raw': total_raw,
+        'total_combined_raw': total_raw,
+        'emea_rows': sum(s.get('emea',0) for s in sheet_stats.values()),
+        'status_filtered': len(combined)
+    }
+    
+    return combined, stats
+
+def split_healthcare_classification(df: pd.DataFrame):
+    """Split DataFrame into healthcare and non-healthcare based on account classification."""
+    if df.empty or 'ACCT NM' not in df.columns:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    # Apply healthcare classification
+    if 'Source_Sheet' in df.columns:
+        df['Is_Healthcare'] = df.apply(
+            lambda row: is_healthcare(row['ACCT NM'], row['Source_Sheet']), 
+            axis=1
+        )
+    else:
+        df['Is_Healthcare'] = df['ACCT NM'].apply(lambda x: is_healthcare(x))
+    
+    healthcare = df[df['Is_Healthcare'] == True].copy()
+    non_healthcare = df[df['Is_Healthcare'] == False].copy()
+    
+    return healthcare, non_healthcare
+
+def create_dashboard_view(df: pd.DataFrame, sector: str, otp_target: float, debug_mode: bool):
+    """Creates the dashboard view for a given sector (Healthcare or Non-Healthcare)"""
     if df.empty:
-        st.info(f"No {sector} data available after filtering")
+        st.warning(f"No data available for {sector}")
         return
     
-    # Show column information if in debug mode
-    if debug_mode:
-        with st.expander(f"🔍 Debug: {sector} DataFrame Info"):
-            st.write(f"Shape: {df.shape}")
-            st.write("Columns:", list(df.columns))
-            st.write("First few rows:")
-            st.dataframe(df.head())
-    
-    # Get POD and Target dates
-    pod_col = "POD DATE/TIME" if "POD DATE/TIME" in df.columns else None
-    if not pod_col:
-        st.warning(f"No POD DATE/TIME column found in {sector} data")
-        return
-    
-    df["POD_DATE"] = _excel_to_dt(df[pod_col])
-    target_series = _get_target_series(df)
-    
-    if target_series is not None:
-        df["TARGET_DATE"] = _excel_to_dt(target_series)
-        df["ON_TIME"] = df["POD_DATE"] <= df["TARGET_DATE"]
-        has_target = True
-    else:
-        has_target = False
-    
-    # Calculate metrics
-    total_shipments = len(df)
-    
-    if has_target:
-        valid_otp = df[df["TARGET_DATE"].notna() & df["POD_DATE"].notna()]
-        otp_rate = (valid_otp["ON_TIME"].sum() / len(valid_otp) * 100) if len(valid_otp) > 0 else 0
-        on_time_shipments = valid_otp["ON_TIME"].sum()
-    else:
-        otp_rate = 0
-        on_time_shipments = 0
-    
-    # Calculate month-over-month data
-    df["Month"] = df["POD_DATE"].dt.to_period("M").astype(str)
-    valid_months = df[df["Month"].notna() & (df["Month"] != "NaT")]
-    
-    if not valid_months.empty:
-        month_counts = valid_months.groupby("Month").size()
+    # Monthly Revenue
+    if 'POD DATE/TIME' in df.columns and 'REVENUE' in df.columns:
+        st.subheader("📅 Monthly Revenue Trend")
         
-        if has_target:
-            month_otp = valid_months[valid_months["TARGET_DATE"].notna()].groupby("Month").apply(
-                lambda x: (x["ON_TIME"].sum() / len(x) * 100) if len(x) > 0 else 0
-            ).round(1)
-        else:
-            month_otp = pd.Series(dtype=float)
-    else:
-        month_counts = pd.Series(dtype=int)
-        month_otp = pd.Series(dtype=float)
-    
-    # Display KPIs
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="kpi">
-            <div class="k-num">{total_shipments:,}</div>
-            <div class="k-cap">Total Shipments</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="kpi">
-            <div class="k-num" style="color: {'#10b981' if otp_rate >= otp_target else '#ef4444'}">
-                {otp_rate:.1f}%
-            </div>
-            <div class="k-cap">On-Time Rate</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div class="kpi">
-            <div class="k-num">{on_time_shipments:,}</div>
-            <div class="k-cap">On-Time Deliveries</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        unique_accounts = df['ACCT NM'].nunique() if 'ACCT NM' in df.columns else 0
-        st.markdown(f"""
-        <div class="kpi">
-            <div class="k-num">{unique_accounts}</div>
-            <div class="k-cap">Unique Accounts</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Charts section
-    st.markdown("### 📊 Performance Trends")
-    
-    if not month_counts.empty:
-        col1, col2 = st.columns(2)
+        df_month = df.copy()
+        df_month['POD_dt'] = _excel_to_dt(df_month['POD DATE/TIME'])
+        df_month = df_month[df_month['POD_dt'].notna()].copy()
         
-        with col1:
-            # Volume trend
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=month_counts.index,
-                y=month_counts.values,
-                name="Shipments",
-                marker_color=NAVY,
-                text=month_counts.values,
-                textposition='outside'
-            ))
-            fig.update_layout(
-                title="Monthly Shipment Volume",
-                xaxis_title="Month",
-                yaxis_title="Number of Shipments",
-                height=400,
-                showlegend=False
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # OTP trend (if available)
-            if has_target and not month_otp.empty:
+        if not df_month.empty:
+            df_month['REVENUE'] = pd.to_numeric(df_month['REVENUE'], errors='coerce')
+            df_month = df_month[df_month['REVENUE'].notna()].copy()
+            
+            if not df_month.empty:
+                df_month['YearMonth'] = df_month['POD_dt'].dt.to_period("M").astype(str)
+                
+                monthly = df_month.groupby('YearMonth', as_index=False).agg({
+                    'REVENUE': 'sum',
+                    'HAWB': 'count'
+                }).rename(columns={'HAWB': 'Shipments'})
+                
+                monthly = monthly.sort_values('YearMonth')
+                
                 fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=monthly['YearMonth'],
+                    y=monthly['Revenue'],
+                    name='Revenue',
+                    marker_color=NAVY,
+                    text=[_revenue_fmt(v) for v in monthly['Revenue']],
+                    textposition='outside'
+                ))
+                
                 fig.add_trace(go.Scatter(
-                    x=month_otp.index,
-                    y=month_otp.values,
+                    x=monthly['YearMonth'],
+                    y=monthly['Shipments'],
+                    name='Shipments',
                     mode='lines+markers',
-                    name="OTP %",
-                    line=dict(color=BLUE, width=3),
+                    yaxis='y2',
+                    line=dict(color=GOLD, width=3),
                     marker=dict(size=8)
                 ))
-                fig.add_hline(y=otp_target, line_dash="dash", line_color="red",
-                            annotation_text=f"Target: {otp_target}%")
+                
                 fig.update_layout(
-                    title="Monthly On-Time Performance",
-                    xaxis_title="Month",
-                    yaxis_title="On-Time %",
-                    yaxis_range=[0, 105],
-                    height=400
+                    title=dict(text=f"{sector} - Monthly Revenue & Shipments", font=dict(size=18, color=NAVY)),
+                    xaxis=dict(title="Month", tickangle=-45),
+                    yaxis=dict(title="Revenue", side='left', showgrid=True, gridcolor=GRID),
+                    yaxis2=dict(title="Shipments", overlaying='y', side='right', showgrid=False),
+                    hovermode='x unified',
+                    height=400,
+                    template='plotly_white',
+                    showlegend=True
                 )
+                
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.plotly_chart(make_semi_gauge("On-Time Performance", otp_rate), use_container_width=True)
+                
+                # Show data table
+                with st.expander("📊 View Monthly Data"):
+                    display_monthly = monthly.copy()
+                    display_monthly['Revenue'] = display_monthly['Revenue'].apply(_revenue_fmt)
+                    display_monthly['Shipments'] = display_monthly['Shipments'].apply(lambda x: f"{x:,}")
+                    st.dataframe(display_monthly, use_container_width=True)
     
-    # Top accounts analysis
-    if 'ACCT NM' in df.columns:
-        st.markdown("### 🏆 Top Accounts")
-        account_stats = df.groupby('ACCT NM').agg({
-            pod_col: 'count',
-            'ON_TIME': lambda x: (x.sum() / len(x) * 100) if has_target else 0
-        }).round(1)
-        account_stats.columns = ['Shipments', 'OTP %']
-        account_stats = account_stats.sort_values('Shipments', ascending=False).head(10)
+    # OTP Analysis
+    target_col = _get_target_series(df)
+    if target_col is not None and 'POD DATE/TIME' in df.columns:
+        st.subheader("⏱️ On-Time Performance")
         
-        # Create bar chart for top accounts
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=account_stats.index,
-            y=account_stats['Shipments'],
-            name="Shipments",
-            marker_color=NAVY,
-            yaxis='y',
-            text=account_stats['Shipments'],
-            textposition='outside'
-        ))
+        df_otp = df.copy()
+        df_otp['POD_dt'] = _excel_to_dt(df_otp['POD DATE/TIME'])
+        df_otp['Target_dt'] = _excel_to_dt(target_col)
         
-        if has_target:
-            fig.add_trace(go.Scatter(
-                x=account_stats.index,
-                y=account_stats['OTP %'],
-                name="OTP %",
-                yaxis='y2',
-                mode='lines+markers',
-                marker=dict(color=GOLD, size=10),
-                line=dict(color=GOLD, width=3)
-            ))
+        df_otp = df_otp[df_otp['POD_dt'].notna() & df_otp['Target_dt'].notna()].copy()
         
-        fig.update_layout(
-            title="Top 10 Accounts by Volume",
-            xaxis_tickangle=-45,
-            height=400,
-            yaxis=dict(title="Shipments", side='left'),
-            yaxis2=dict(title="OTP %", side='right', overlaying='y', range=[0, 105]) if has_target else None,
-            hovermode='x unified'
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Show detailed table
-        with st.expander("📋 Detailed Account Statistics"):
-            st.dataframe(account_stats.style.format({
-                'Shipments': '{:,.0f}',
-                'OTP %': '{:.1f}%'
-            }))
-
-def create_accounts_overview(all_df: pd.DataFrame, healthcare_df: pd.DataFrame, 
-                            non_healthcare_df: pd.DataFrame, stats: dict):
-    """Create the All Accounts Overview tab showing all accounts with color coding."""
-    
-    st.markdown("## 📋 All Accounts Overview")
-    
-    # Get all unique accounts from the raw data
-    all_accounts = set()
-    healthcare_accounts = set()
-    non_healthcare_accounts = set()
-    
-    if 'ACCT NM' in all_df.columns:
-        all_accounts = set(all_df['ACCT NM'].dropna().unique())
-    
-    if not healthcare_df.empty and 'ACCT NM' in healthcare_df.columns:
-        healthcare_accounts = set(healthcare_df['ACCT NM'].dropna().unique())
-    
-    if not non_healthcare_df.empty and 'ACCT NM' in non_healthcare_df.columns:
-        non_healthcare_accounts = set(non_healthcare_df['ACCT NM'].dropna().unique())
-    
-    # Find unused accounts (in raw data but not in filtered data)
-    used_accounts = healthcare_accounts | non_healthcare_accounts
-    unused_accounts = all_accounts - used_accounts
-    
-    # Display summary statistics
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Unique Accounts", len(all_accounts))
-    with col2:
-        st.metric("Healthcare Accounts", len(healthcare_accounts))
-    with col3:
-        st.metric("Non-Healthcare Accounts", len(non_healthcare_accounts))
-    with col4:
-        st.metric("Unused Accounts", len(unused_accounts))
-    
-    # Create account categorization DataFrame
-    accounts_data = []
-    
-    # Process each account
-    for account in all_accounts:
-        category = "Unused"
-        color = "#f9f9f9"  # Light gray for unused
-        
-        if account in healthcare_accounts:
-            category = "Healthcare"
-            color = "#d4f4dd"  # Light green
-        elif account in non_healthcare_accounts:
-            category = "Non-Healthcare"
-            color = "#d6e5ff"  # Light blue
-        
-        # Get shipment count for this account
-        shipment_count = 0
-        if 'ACCT NM' in all_df.columns:
-            shipment_count = len(all_df[all_df['ACCT NM'] == account])
-        
-        # Get source sheets for this account
-        source_sheets = []
-        if 'ACCT NM' in all_df.columns and 'Source_Sheet' in all_df.columns:
-            source_sheets = all_df[all_df['ACCT NM'] == account]['Source_Sheet'].unique().tolist()
-        
-        accounts_data.append({
-            'Account Name': account,
-            'Category': category,
-            'Total Shipments': shipment_count,
-            'Source Sheets': ', '.join(source_sheets) if source_sheets else 'N/A',
-            '_color': color
-        })
-    
-    # Create DataFrame and sort by category and shipment count
-    accounts_df = pd.DataFrame(accounts_data)
-    accounts_df = accounts_df.sort_values(['Category', 'Total Shipments'], 
-                                          ascending=[True, False])
-    
-    # Display color legend
-    st.markdown("""
-    ### Color Legend:
-    - 🟢 **Green Background**: Healthcare Accounts (filtered and included in Healthcare analysis)
-    - 🔵 **Blue Background**: Non-Healthcare Accounts (filtered and included in Non-Healthcare analysis)
-    - ⚪ **Gray Background**: Unused Accounts (not meeting filter criteria or excluded from analysis)
-    """)
-    
-    # Add filters
-    st.markdown("### 🔍 Filter Options")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        category_filter = st.multiselect(
-            "Filter by Category",
-            options=['Healthcare', 'Non-Healthcare', 'Unused'],
-            default=['Healthcare', 'Non-Healthcare', 'Unused']
-        )
-    
-    with col2:
-        min_shipments = st.number_input(
-            "Minimum Shipments",
-            min_value=0,
-            max_value=int(accounts_df['Total Shipments'].max()) if not accounts_df.empty else 0,
-            value=0
-        )
-    
-    with col3:
-        search_term = st.text_input("Search Account Name", "")
-    
-    # Apply filters
-    filtered_df = accounts_df[accounts_df['Category'].isin(category_filter)]
-    filtered_df = filtered_df[filtered_df['Total Shipments'] >= min_shipments]
-    
-    if search_term:
-        filtered_df = filtered_df[
-            filtered_df['Account Name'].str.contains(search_term, case=False, na=False)
-        ]
-    
-    # Display the table with color coding
-    st.markdown(f"### 📊 Accounts Table (Showing {len(filtered_df)} of {len(accounts_df)} accounts)")
-    
-    # Style the dataframe
-    def highlight_rows(row):
-        if row['Category'] == 'Healthcare':
-            return ['background-color: #d4f4dd'] * len(row)
-        elif row['Category'] == 'Non-Healthcare':
-            return ['background-color: #d6e5ff'] * len(row)
-        else:
-            return ['background-color: #f9f9f9'] * len(row)
-    
-    styled_df = filtered_df[['Account Name', 'Category', 'Total Shipments', 'Source Sheets']].style.apply(
-        highlight_rows, axis=1
-    ).format({'Total Shipments': '{:,.0f}'})
-    
-    st.dataframe(styled_df, height=600, use_container_width=True)
-    
-    # Export functionality
-    st.markdown("### 💾 Export Data")
-    csv = filtered_df[['Account Name', 'Category', 'Total Shipments', 'Source Sheets']].to_csv(index=False)
-    st.download_button(
-        label="Download Accounts Data as CSV",
-        data=csv,
-        file_name=f"accounts_overview_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv"
-    )
-    
-    # Additional Analysis
-    with st.expander("📈 Account Distribution Analysis"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Pie chart of account categories
-            fig = px.pie(
-                values=[len(healthcare_accounts), len(non_healthcare_accounts), len(unused_accounts)],
-                names=['Healthcare', 'Non-Healthcare', 'Unused'],
-                title="Account Distribution by Category",
-                color_discrete_map={
-                    'Healthcare': '#10b981',
-                    'Non-Healthcare': '#3b82f6',
-                    'Unused': '#9ca3af'
-                }
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Bar chart of top sheets by account count
-            if 'Source_Sheet' in all_df.columns and 'ACCT NM' in all_df.columns:
-                sheet_accounts = all_df.groupby('Source_Sheet')['ACCT NM'].nunique().sort_values(ascending=False)
-                fig = go.Figure(go.Bar(
-                    x=sheet_accounts.values,
-                    y=sheet_accounts.index,
-                    orientation='h',
-                    marker_color=NAVY
+        if not df_otp.empty:
+            df_otp['OnTime'] = df_otp['POD_dt'] <= df_otp['Target_dt']
+            overall_otp = (df_otp['OnTime'].sum() / len(df_otp)) * 100
+            
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.plotly_chart(make_semi_gauge(f"{sector} OTP", overall_otp), use_container_width=True)
+            
+            with col2:
+                df_otp['YearMonth'] = df_otp['POD_dt'].dt.to_period("M").astype(str)
+                monthly_otp = df_otp.groupby('YearMonth').agg(
+                    Total=('OnTime', 'count'),
+                    OnTime_Count=('OnTime', 'sum')
+                ).reset_index()
+                monthly_otp['OTP_Pct'] = (monthly_otp['OnTime_Count'] / monthly_otp['Total']) * 100
+                monthly_otp = monthly_otp.sort_values('YearMonth')
+                
+                fig2 = go.Figure()
+                fig2.add_trace(go.Scatter(
+                    x=monthly_otp['YearMonth'],
+                    y=monthly_otp['OTP_Pct'],
+                    mode='lines+markers',
+                    name='OTP %',
+                    line=dict(color=NAVY, width=3),
+                    marker=dict(size=10, color=NAVY),
+                    fill='tozeroy',
+                    fillcolor='rgba(11,31,68,0.1)'
                 ))
-                fig.update_layout(
-                    title="Unique Accounts per Sheet",
-                    xaxis_title="Number of Accounts",
-                    yaxis_title="Sheet Name",
-                    height=400
+                
+                fig2.add_hline(y=otp_target, line_dash="dash", line_color=RED, 
+                              annotation_text=f"Target: {otp_target}%")
+                
+                fig2.update_layout(
+                    title=dict(text="Monthly OTP Trend", font=dict(size=16, color=NAVY)),
+                    xaxis=dict(title="Month", tickangle=-45),
+                    yaxis=dict(title="OTP %", range=[0, 100], showgrid=True, gridcolor=GRID),
+                    height=300,
+                    template='plotly_white',
+                    hovermode='x unified'
                 )
-                st.plotly_chart(fig, use_container_width=True)
-
-# ---------------- Main App ----------------
-uploaded_file = st.file_uploader("Upload Excel file", type=['xlsx', 'xls'], key="file_uploader")
-
-debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
-otp_target = st.sidebar.slider("OTP Target (%)", 0, 100, OTP_TARGET, 5)
-
-if uploaded_file:
-    with st.spinner("Processing file..."):
-        # Read all sheets
-        all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
-        
-        combined_dfs = []
-        all_raw_dfs = []  # Store all raw data for account overview
-        stats = {
-            'sheets_read': list(all_sheets.keys()),
-            'total_rows_raw': 0,
-            'total_combined_raw': 0,
-            'by_sheet': {},
-            'emea_rows': 0,
-            'status_filtered': 0,
-            'healthcare_rows': 0,
-            'non_healthcare_rows': 0,
-            'all_accounts': set(),
-            'healthcare_accounts': set(),
-            'non_healthcare_accounts': set()
-        }
-        
-        # Process each sheet
-        for sheet_name, df_sheet in all_sheets.items():
-            try:
-                if df_sheet.empty:
-                    continue
                 
-                # Track raw data
-                raw_rows = len(df_sheet)
-                stats['total_rows_raw'] += raw_rows
-                
-                # Store raw data with sheet name for account overview
-                df_sheet_copy = df_sheet.copy()
-                df_sheet_copy['Source_Sheet'] = sheet_name
-                all_raw_dfs.append(df_sheet_copy)
-                
-                # Collect all accounts before filtering
-                if 'ACCT NM' in df_sheet.columns:
-                    stats['all_accounts'].update(df_sheet['ACCT NM'].dropna().unique())
-                
-                sheet_stats = {
-                    'raw_rows': raw_rows,
-                    'initial': len(df_sheet),
-                    'emea': 0,
-                    'final': 0
-                }
-                
-                # EMEA Filter
-                if "ORIGIN" in df_sheet.columns and "DEST" in df_sheet.columns:
-                    orig = df_sheet["ORIGIN"].str.upper().str[:2]
-                    dest = df_sheet["DEST"].str.upper().str[:2]
-                    emea_mask = orig.isin(EMEA_COUNTRIES) | dest.isin(EMEA_COUNTRIES)
-                    df_emea = df_sheet[emea_mask].copy()
-                else:
-                    df_emea = df_sheet.copy()
-                
-                sheet_stats['emea'] = len(df_emea)
-                stats['emea_rows'] += len(df_emea)
-                
-                # Status Filter (440-BILLED)
-                if "STATUS" in df_emea.columns:
-                    status_mask = df_emea["STATUS"].astype(str).str.strip().str.upper() == "440-BILLED"
-                    df_filtered = df_emea[status_mask].copy()
-                else:
-                    df_filtered = df_emea.copy()
-                
-                sheet_stats['final'] = len(df_filtered)
-                stats['by_sheet'][sheet_name] = sheet_stats
-                
-                # Add source sheet column
-                df_filtered["Source_Sheet"] = sheet_name
-                
-                # Classify accounts
-                if 'ACCT NM' in df_filtered.columns:
-                    df_filtered['Is_Healthcare'] = df_filtered['ACCT NM'].apply(
-                        lambda x: is_healthcare(x, sheet_name)
-                    )
-                    
-                    # Track healthcare and non-healthcare accounts
-                    hc_accounts = df_filtered[df_filtered['Is_Healthcare'] == True]['ACCT NM'].dropna().unique()
-                    non_hc_accounts = df_filtered[df_filtered['Is_Healthcare'] == False]['ACCT NM'].dropna().unique()
-                    
-                    stats['healthcare_accounts'].update(hc_accounts)
-                    stats['non_healthcare_accounts'].update(non_hc_accounts)
-                else:
-                    # Default classification based on sheet
-                    df_filtered['Is_Healthcare'] = is_healthcare(None, sheet_name)
-                
-                combined_dfs.append(df_filtered)
-                
-            except Exception as e:
-                st.warning(f"Error processing sheet '{sheet_name}': {str(e)}")
-                stats['by_sheet'][sheet_name] = {'error': str(e)}
-        
-        # Combine all sheets
-        if combined_dfs:
-            combined_df = pd.concat(combined_dfs, ignore_index=True)
-            stats['status_filtered'] = len(combined_df)
-            
-            # Combine all raw data
-            all_raw_df = pd.concat(all_raw_dfs, ignore_index=True) if all_raw_dfs else pd.DataFrame()
-            stats['total_combined_raw'] = len(all_raw_df)
-            
-            # Split into healthcare and non-healthcare
-            healthcare_df = combined_df[combined_df['Is_Healthcare'] == True].copy()
-            non_healthcare_df = combined_df[combined_df['Is_Healthcare'] == False].copy()
-            
-            stats['healthcare_rows'] = len(healthcare_df)
-            stats['non_healthcare_rows'] = len(non_healthcare_df)
-        else:
-            combined_df = pd.DataFrame()
-            all_raw_df = pd.DataFrame()
-            healthcare_df = pd.DataFrame()
-            non_healthcare_df = pd.DataFrame()
+                st.plotly_chart(fig2, use_container_width=True)
     
-    # Debug information
+    # Top Accounts
+    if 'ACCT NM' in df.columns and 'REVENUE' in df.columns:
+        st.subheader("🏆 Top 10 Accounts by Revenue")
+        
+        df_top = df.copy()
+        df_top['REVENUE'] = pd.to_numeric(df_top['REVENUE'], errors='coerce')
+        df_top = df_top[df_top['REVENUE'].notna()].copy()
+        
+        if not df_top.empty:
+            top_accounts = df_top.groupby('ACCT NM', as_index=False).agg({
+                'REVENUE': 'sum',
+                'HAWB': 'count'
+            }).rename(columns={'HAWB': 'Shipments'})
+            
+            top_accounts = top_accounts.nlargest(10, 'REVENUE')
+            
+            fig3 = go.Figure(go.Bar(
+                y=top_accounts['ACCT NM'],
+                x=top_accounts['REVENUE'],
+                orientation='h',
+                marker_color=NAVY,
+                text=[_revenue_fmt(v) for v in top_accounts['REVENUE']],
+                textposition='outside'
+            ))
+            
+            fig3.update_layout(
+                title=dict(text="Top 10 Accounts", font=dict(size=16, color=NAVY)),
+                xaxis=dict(title="Revenue", showgrid=True, gridcolor=GRID),
+                yaxis=dict(title="", autorange="reversed"),
+                height=400,
+                template='plotly_white'
+            )
+            
+            st.plotly_chart(fig3, use_container_width=True)
+
+# ---------------- Upload ----------------
+uploaded = st.file_uploader("Upload Excel File", type=["xlsx","xls"])
+if not uploaded:
+    st.info("👆 Please upload an Excel file to begin")
+    st.stop()
+
+# Add debug toggle
+debug_mode = st.checkbox("🐛 Enable Debug Mode", value=False)
+
+# ---------------- Load & Process ----------------
+combined_df, stats = get_sheets_dict(uploaded, EMEA_COUNTRIES)
+
+if combined_df.empty:
+    st.error("No data found after filtering!")
+    st.stop()
+
+# Split into healthcare and non-healthcare
+healthcare_df, non_healthcare_df = split_healthcare_classification(combined_df)
+
+# Update stats with healthcare counts
+stats['healthcare_rows'] = len(healthcare_df)
+stats['non_healthcare_rows'] = len(non_healthcare_df)
+
+# OTP target slider
+otp_target = st.slider("Set OTP Target (%)", 80, 100, OTP_TARGET, 1)
+
+# ---------------- NEW: Collect ALL accounts from ALL sheets ----------------
+# Read all sheets again to get ALL accounts (before any filtering)
+all_accounts_data = []
+
+xls = pd.ExcelFile(uploaded)
+for sheet_name in xls.sheet_names:
+    try:
+        sheet_df = pd.read_excel(xls, sheet_name=sheet_name)
+        if 'ACCT NM' in sheet_df.columns:
+            # Get unique accounts from this sheet with their row count
+            accounts_in_sheet = sheet_df.groupby('ACCT NM').size().reset_index(name='Row_Count')
+            accounts_in_sheet['Source_Sheet'] = sheet_name
+            
+            # Classify each account
+            accounts_in_sheet['Classification'] = accounts_in_sheet['ACCT NM'].apply(
+                lambda x: 'Healthcare' if is_healthcare(x, sheet_name) else 'Non-Healthcare'
+            )
+            
+            all_accounts_data.append(accounts_in_sheet)
+    except Exception as e:
+        st.warning(f"Could not read accounts from sheet {sheet_name}: {e}")
+
+# Combine all accounts
+if all_accounts_data:
+    all_accounts_df = pd.concat(all_accounts_data, ignore_index=True)
+    
+    # Aggregate by account name across all sheets
+    all_accounts_summary = all_accounts_df.groupby('ACCT NM').agg({
+        'Row_Count': 'sum',
+        'Classification': 'first',  # Take first classification (should be consistent)
+        'Source_Sheet': lambda x: ', '.join(sorted(set(x)))  # Combine sheet names
+    }).reset_index()
+    
+    # Check which accounts are actually used in the filtered data
+    if 'ACCT NM' in combined_df.columns:
+        used_accounts = set(combined_df['ACCT NM'].dropna().unique())
+        all_accounts_summary['Used_in_Filter'] = all_accounts_summary['ACCT NM'].isin(used_accounts)
+    else:
+        all_accounts_summary['Used_in_Filter'] = False
+    
+    # Sort by classification and then by row count
+    all_accounts_summary = all_accounts_summary.sort_values(
+        ['Classification', 'Row_Count'], 
+        ascending=[True, False]
+    )
+else:
+    all_accounts_summary = pd.DataFrame()
+
+# ---------------- Debug Info ----------------
+if debug_mode:
     with st.expander("🔍 Debug: COMPLETE Data Flow Tracking"):
         st.write("**📊 COMPREHENSIVE ROW TRACKING:**")
         st.write(f"**TOTAL RAW ROWS (before ANY filtering):** {stats.get('total_rows_raw', 0):,}")
@@ -752,9 +557,6 @@ if uploaded_file:
         st.write("\n**4. Healthcare Classification:**")
         st.write(f"   Healthcare: {stats.get('healthcare_rows', 0):,} rows")
         st.write(f"   Non-Healthcare: {stats.get('non_healthcare_rows', 0):,} rows")
-        st.write(f"   Total Unique Accounts: {len(stats.get('all_accounts', set())):,}")
-        st.write(f"   Healthcare Accounts: {len(stats.get('healthcare_accounts', set())):,}")
-        st.write(f"   Non-Healthcare Accounts: {len(stats.get('non_healthcare_accounts', set())):,}")
         
         # Show which sheets contribute to each category
         if not healthcare_df.empty and 'Source_Sheet' in healthcare_df.columns:
@@ -769,105 +571,258 @@ if uploaded_file:
             for sheet, count in non_hc_sources.items():
                 st.write(f"   {sheet}: {count:,} rows")
 
-    # Show processing statistics - ENHANCED
-    with st.expander("📈 Data Processing Statistics"):
+# Show processing statistics
+with st.expander("📈 Data Processing Statistics"):
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.metric("RAW Rows (All)", f"{stats.get('total_rows_raw', 0):,}")
+    with col2:
+        st.metric("Total Sheets", f"{len(stats.get('sheets_read', []))}")
+    with col3:
+        st.metric("EMEA Filtered", f"{stats.get('emea_rows', 0):,}")
+    with col4:
+        st.metric("440-BILLED", f"{stats.get('status_filtered', 0):,}")
+    with col5:
+        st.metric("HC / Non-HC", f"{stats.get('healthcare_rows', 0):,} / {stats.get('non_healthcare_rows', 0):,}")
+    
+    if 'by_sheet' in stats:
+        st.markdown("#### Breakdown by Sheet:")
+        sheet_df = pd.DataFrame(stats['by_sheet']).T
+        
+        # Reorder columns to show raw rows first
+        if 'raw_rows' in sheet_df.columns:
+            sheet_df = sheet_df[['raw_rows', 'initial', 'emea', 'final']]
+            sheet_df.columns = ['Raw Rows (ALL)', 'Initial', 'After EMEA', 'After Status']
+        else:
+            sheet_df.columns = ['Initial Rows', 'After EMEA Filter', 'After Status Filter']
+        
+        st.dataframe(sheet_df)
+        
+        # Additional validation
+        st.markdown("#### Validation:")
+        st.write(f"✓ Sheets processed: {len(stats.get('sheets_read', []))}")
+        st.write(f"✓ Raw rows (all sheets): {stats.get('total_rows_raw', 0):,}")
+        st.write(f"✓ Rows after all filters: {stats.get('status_filtered', 0):,}")
+        total_processed = stats.get('healthcare_rows', 0) + stats.get('non_healthcare_rows', 0)
+        st.write(f"✓ HC + Non-HC total: {total_processed:,}")
+        if total_processed == stats.get('status_filtered', 0):
+            st.success("✅ All filtered rows are categorized correctly!")
+        else:
+            st.warning(f"⚠️ Mismatch: {stats.get('status_filtered', 0) - total_processed} rows not categorized")
+
+# Create tabs - ADDED NEW TAB
+tab1, tab2, tab3 = st.tabs(["🏥 Healthcare", "✈️ Non-Healthcare", "📋 All Accounts Overview"])
+
+with tab1:
+    st.markdown("## Healthcare Sector Analysis")
+    if not healthcare_df.empty:
+        st.markdown(f"**Total Healthcare Entries:** {len(healthcare_df):,}")
+        # Show sample accounts
+        with st.expander("Sample Healthcare Accounts"):
+            if 'ACCT NM' in healthcare_df.columns:
+                unique_accounts = healthcare_df['ACCT NM'].dropna().unique()[:20]
+                st.write(", ".join(unique_accounts))
+        
+        # Debug info
+        if debug_mode:
+            with st.expander("🔍 Debug: Healthcare POD Date Processing"):
+                if 'POD DATE/TIME' in healthcare_df.columns:
+                    sample_pod = healthcare_df[['POD DATE/TIME']].dropna().head(10)
+                    st.write("Sample POD DATE/TIME values:")
+                    st.dataframe(sample_pod)
+                    
+                    # Show how dates are being parsed
+                    test_dates = _excel_to_dt(healthcare_df['POD DATE/TIME'].head(10))
+                    st.write("Parsed dates:")
+                    st.write(test_dates.to_list())
+                    
+                    # Show month grouping
+                    st.write("Month grouping (YYYY-MM):")
+                    st.write(test_dates.dt.to_period("M").astype(str).to_list())
+    
+    create_dashboard_view(healthcare_df, "Healthcare", otp_target, debug_mode)
+
+with tab2:
+    st.markdown("## Non-Healthcare Sector Analysis")
+    if not non_healthcare_df.empty:
+        st.markdown(f"**Total Non-Healthcare Entries:** {len(non_healthcare_df):,}")
+        # Show sample accounts
+        with st.expander("Sample Non-Healthcare Accounts"):
+            if 'ACCT NM' in non_healthcare_df.columns:
+                unique_accounts = non_healthcare_df['ACCT NM'].dropna().unique()[:20]
+                st.write(", ".join(unique_accounts))
+        
+        # Debug info
+        if debug_mode:
+            with st.expander("🔍 Debug: Non-Healthcare POD Date Processing"):
+                if 'POD DATE/TIME' in non_healthcare_df.columns:
+                    sample_pod = non_healthcare_df[['POD DATE/TIME']].dropna().head(10)
+                    st.write("Sample POD DATE/TIME values:")
+                    st.dataframe(sample_pod)
+                    
+                    # Show how dates are being parsed
+                    test_dates = _excel_to_dt(non_healthcare_df['POD DATE/TIME'].head(10))
+                    st.write("Parsed dates:")
+                    st.write(test_dates.to_list())
+                    
+                    # Show month grouping
+                    st.write("Month grouping (YYYY-MM):")
+                    st.write(test_dates.dt.to_period("M").astype(str).to_list())
+    
+    create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
+
+# NEW TAB: All Accounts Overview
+with tab3:
+    st.markdown("## 📋 All Accounts Overview")
+    st.markdown("""
+    This tab shows **ALL accounts** from **ALL sheets** in the Excel file, regardless of filtering:
+    - 🟢 **Green**: Accounts classified as **Healthcare** and used in filtered data
+    - 🔵 **Blue**: Accounts classified as **Non-Healthcare** and used in filtered data
+    - ⚪ **No highlight**: Accounts that exist but are **not used** in filtered data (filtered out by EMEA or 440-BILLED criteria)
+    """)
+    
+    if not all_accounts_summary.empty:
+        # Summary metrics
+        total_accounts = len(all_accounts_summary)
+        hc_accounts = len(all_accounts_summary[all_accounts_summary['Classification'] == 'Healthcare'])
+        non_hc_accounts = len(all_accounts_summary[all_accounts_summary['Classification'] == 'Non-Healthcare'])
+        used_accounts = len(all_accounts_summary[all_accounts_summary['Used_in_Filter'] == True])
+        unused_accounts = len(all_accounts_summary[all_accounts_summary['Used_in_Filter'] == False])
+        
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            st.metric("RAW Rows (All)", f"{stats.get('total_rows_raw', 0):,}")
+            st.metric("Total Accounts", f"{total_accounts:,}")
         with col2:
-            st.metric("Total Sheets", f"{len(stats.get('sheets_read', []))}")
+            st.metric("Healthcare", f"{hc_accounts:,}", delta=None, delta_color="normal")
         with col3:
-            st.metric("EMEA Filtered", f"{stats.get('emea_rows', 0):,}")
+            st.metric("Non-Healthcare", f"{non_hc_accounts:,}", delta=None, delta_color="normal")
         with col4:
-            st.metric("440-BILLED", f"{stats.get('status_filtered', 0):,}")
+            st.metric("Used in Filter", f"{used_accounts:,}", delta=None, delta_color="normal")
         with col5:
-            st.metric("HC / Non-HC", f"{stats.get('healthcare_rows', 0):,} / {stats.get('non_healthcare_rows', 0):,}")
+            st.metric("Filtered Out", f"{unused_accounts:,}", delta=None, delta_color="inverse")
         
-        if 'by_sheet' in stats:
-            st.markdown("#### Breakdown by Sheet:")
-            sheet_df = pd.DataFrame(stats['by_sheet']).T
-            
-            # Reorder columns to show raw rows first
-            if 'raw_rows' in sheet_df.columns:
-                sheet_df = sheet_df[['raw_rows', 'initial', 'emea', 'final']]
-                sheet_df.columns = ['Raw Rows (ALL)', 'Initial', 'After EMEA', 'After Status']
+        st.markdown("---")
+        
+        # Filter options
+        col_filter1, col_filter2 = st.columns(2)
+        with col_filter1:
+            classification_filter = st.multiselect(
+                "Filter by Classification:",
+                options=['Healthcare', 'Non-Healthcare'],
+                default=['Healthcare', 'Non-Healthcare']
+            )
+        with col_filter2:
+            usage_filter = st.radio(
+                "Filter by Usage:",
+                options=['All', 'Used Only', 'Unused Only'],
+                horizontal=True
+            )
+        
+        # Apply filters
+        filtered_accounts = all_accounts_summary.copy()
+        if classification_filter:
+            filtered_accounts = filtered_accounts[filtered_accounts['Classification'].isin(classification_filter)]
+        
+        if usage_filter == 'Used Only':
+            filtered_accounts = filtered_accounts[filtered_accounts['Used_in_Filter'] == True]
+        elif usage_filter == 'Unused Only':
+            filtered_accounts = filtered_accounts[filtered_accounts['Used_in_Filter'] == False]
+        
+        st.markdown(f"**Showing {len(filtered_accounts):,} of {total_accounts:,} accounts**")
+        
+        # Create styled dataframe
+        def highlight_accounts(row):
+            if not row['Used_in_Filter']:
+                return [''] * len(row)  # No highlighting for unused accounts
+            elif row['Classification'] == 'Healthcare':
+                return ['background-color: #d1fae5'] * len(row)  # Light green
             else:
-                sheet_df.columns = ['Initial Rows', 'After EMEA Filter', 'After Status Filter']
-            
-            st.dataframe(sheet_df)
-            
-            # Additional validation
-            st.markdown("#### Validation:")
-            st.write(f"✓ Sheets processed: {len(stats.get('sheets_read', []))}")
-            st.write(f"✓ Raw rows (all sheets): {stats.get('total_rows_raw', 0):,}")
-            st.write(f"✓ Rows after all filters: {stats.get('status_filtered', 0):,}")
-            total_processed = stats.get('healthcare_rows', 0) + stats.get('non_healthcare_rows', 0)
-            st.write(f"✓ HC + Non-HC total: {total_processed:,}")
-            if total_processed == stats.get('status_filtered', 0):
-                st.success("✅ All filtered rows are categorized correctly!")
-            else:
-                st.warning(f"⚠️ Mismatch: {stats.get('status_filtered', 0) - total_processed} rows not categorized")
-
-    # Create tabs with the new All Accounts tab
-    tab1, tab2, tab3 = st.tabs(["📋 All Accounts Overview", "🏥 Healthcare", "✈️ Non-Healthcare"])
-    
-    with tab1:
-        create_accounts_overview(all_raw_df, healthcare_df, non_healthcare_df, stats)
-    
-    with tab2:
-        st.markdown("## Healthcare Sector Analysis")
-        if not healthcare_df.empty:
-            st.markdown(f"**Total Healthcare Entries:** {len(healthcare_df):,}")
-            # Show sample accounts
-            with st.expander("Sample Healthcare Accounts"):
-                if 'ACCT NM' in healthcare_df.columns:
-                    unique_accounts = healthcare_df['ACCT NM'].dropna().unique()[:20]
-                    st.write(", ".join(unique_accounts))
-            
-            # Debug info
-            if debug_mode:
-                with st.expander("🔍 Debug: Healthcare POD Date Processing"):
-                    if 'POD DATE/TIME' in healthcare_df.columns:
-                        sample_pod = healthcare_df[['POD DATE/TIME']].dropna().head(10)
-                        st.write("Sample POD DATE/TIME values:")
-                        st.dataframe(sample_pod)
-                        
-                        # Show how dates are being parsed
-                        test_dates = _excel_to_dt(healthcare_df['POD DATE/TIME'].head(10))
-                        st.write("Parsed dates:")
-                        st.write(test_dates.to_list())
-                        
-                        # Show month grouping
-                        st.write("Month grouping (YYYY-MM):")
-                        st.write(test_dates.dt.to_period("M").astype(str).to_list())
+                return ['background-color: #dbeafe'] * len(row)  # Light blue
         
-        create_dashboard_view(healthcare_df, "Healthcare", otp_target, debug_mode)
-    
-    with tab3:
-        st.markdown("## Non-Healthcare Sector Analysis")
-        if not non_healthcare_df.empty:
-            st.markdown(f"**Total Non-Healthcare Entries:** {len(non_healthcare_df):,}")
-            # Show sample accounts
-            with st.expander("Sample Non-Healthcare Accounts"):
-                if 'ACCT NM' in non_healthcare_df.columns:
-                    unique_accounts = non_healthcare_df['ACCT NM'].dropna().unique()[:20]
-                    st.write(", ".join(unique_accounts))
-            
-            # Debug info
-            if debug_mode:
-                with st.expander("🔍 Debug: Non-Healthcare POD Date Processing"):
-                    if 'POD DATE/TIME' in non_healthcare_df.columns:
-                        sample_pod = non_healthcare_df[['POD DATE/TIME']].dropna().head(10)
-                        st.write("Sample POD DATE/TIME values:")
-                        st.dataframe(sample_pod)
-                        
-                        # Show how dates are being parsed
-                        test_dates = _excel_to_dt(non_healthcare_df['POD DATE/TIME'].head(10))
-                        st.write("Parsed dates:")
-                        st.write(test_dates.to_list())
-                        
-                        # Show month grouping
-                        st.write("Month grouping (YYYY-MM):")
-                        st.write(test_dates.dt.to_period("M").astype(str).to_list())
+        # Display the dataframe with styling
+        display_df = filtered_accounts.copy()
+        display_df['Row_Count'] = display_df['Row_Count'].apply(lambda x: f"{x:,}")
+        display_df['Used_in_Filter'] = display_df['Used_in_Filter'].map({True: '✓ Yes', False: '✗ No'})
+        display_df = display_df.rename(columns={
+            'ACCT NM': 'Account Name',
+            'Row_Count': 'Total Rows (All Sheets)',
+            'Classification': 'Classification',
+            'Source_Sheet': 'Found in Sheets',
+            'Used_in_Filter': 'Used in Filtered Data'
+        })
         
-        create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
+        styled_df = display_df.style.apply(highlight_accounts, axis=1)
+        st.dataframe(styled_df, use_container_width=True, height=600)
+        
+        # Detailed breakdown
+        with st.expander("📊 Detailed Account Analysis"):
+            st.markdown("#### Accounts Used in Filtered Data:")
+            used_df = all_accounts_summary[all_accounts_summary['Used_in_Filter'] == True].copy()
+            if not used_df.empty:
+                hc_used = len(used_df[used_df['Classification'] == 'Healthcare'])
+                non_hc_used = len(used_df[used_df['Classification'] == 'Non-Healthcare'])
+                st.write(f"- **Healthcare accounts used:** {hc_used:,}")
+                st.write(f"- **Non-Healthcare accounts used:** {non_hc_used:,}")
+                st.write(f"- **Total rows in filtered data:** {used_df['Row_Count'].sum():,}")
+            
+            st.markdown("#### Accounts Filtered Out (Not Used):")
+            unused_df = all_accounts_summary[all_accounts_summary['Used_in_Filter'] == False].copy()
+            if not unused_df.empty:
+                hc_unused = len(unused_df[unused_df['Classification'] == 'Healthcare'])
+                non_hc_unused = len(unused_df[unused_df['Classification'] == 'Non-Healthcare'])
+                st.write(f"- **Healthcare accounts filtered out:** {hc_unused:,}")
+                st.write(f"- **Non-Healthcare accounts filtered out:** {non_hc_unused:,}")
+                st.write(f"- **Total rows filtered out:** {unused_df['Row_Count'].sum():,}")
+                st.info("💡 These accounts were removed by EMEA country filter or 440-BILLED status filter")
+        
+        # Show sample accounts from each category
+        with st.expander("🔍 Sample Accounts by Category"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Healthcare Accounts (Used):**")
+                hc_used_sample = all_accounts_summary[
+                    (all_accounts_summary['Classification'] == 'Healthcare') & 
+                    (all_accounts_summary['Used_in_Filter'] == True)
+                ]['ACCT NM'].head(10).tolist()
+                if hc_used_sample:
+                    for acc in hc_used_sample:
+                        st.write(f"🟢 {acc}")
+                else:
+                    st.write("No healthcare accounts used")
+                
+                st.markdown("**Healthcare Accounts (Filtered Out):**")
+                hc_unused_sample = all_accounts_summary[
+                    (all_accounts_summary['Classification'] == 'Healthcare') & 
+                    (all_accounts_summary['Used_in_Filter'] == False)
+                ]['ACCT NM'].head(5).tolist()
+                if hc_unused_sample:
+                    for acc in hc_unused_sample:
+                        st.write(f"⚪ {acc}")
+                else:
+                    st.write("No healthcare accounts filtered out")
+            
+            with col2:
+                st.markdown("**Non-Healthcare Accounts (Used):**")
+                non_hc_used_sample = all_accounts_summary[
+                    (all_accounts_summary['Classification'] == 'Non-Healthcare') & 
+                    (all_accounts_summary['Used_in_Filter'] == True)
+                ]['ACCT NM'].head(10).tolist()
+                if non_hc_used_sample:
+                    for acc in non_hc_used_sample:
+                        st.write(f"🔵 {acc}")
+                else:
+                    st.write("No non-healthcare accounts used")
+                
+                st.markdown("**Non-Healthcare Accounts (Filtered Out):**")
+                non_hc_unused_sample = all_accounts_summary[
+                    (all_accounts_summary['Classification'] == 'Non-Healthcare') & 
+                    (all_accounts_summary['Used_in_Filter'] == False)
+                ]['ACCT NM'].head(5).tolist()
+                if non_hc_unused_sample:
+                    for acc in non_hc_unused_sample:
+                        st.write(f"⚪ {acc}")
+                else:
+                    st.write("No non-healthcare accounts filtered out")
+    else:
+        st.warning("No account data available")
