@@ -1545,17 +1545,14 @@ with tab3:
         
         st.markdown(f"**Showing {len(filtered_accounts):,} of {total_accounts:,} accounts**")
         
-        # Create styled dataframe
-        def highlight_accounts(row):
-            if not row['Used_in_Filter']:
-                return [''] * len(row)  # No highlighting for unused accounts
-            elif row['Classification'] == 'Healthcare':
-                return ['background-color: #d1fae5'] * len(row)  # Light green
-            else:
-                return ['background-color: #dbeafe'] * len(row)  # Light blue
+        # Prepare display dataframe with formatting
+        display_df = filtered_accounts.copy().reset_index(drop=True)
         
-        # Display the dataframe with styling
-        display_df = filtered_accounts.copy()
+        # Store original values for highlighting before formatting
+        original_used = display_df['Used_in_Filter'].copy()
+        original_classification = display_df['Classification'].copy()
+        
+        # Format the display values
         display_df['Row_Count'] = display_df['Row_Count'].apply(lambda x: f"{x:,}")
         display_df['Used_in_Filter'] = display_df['Used_in_Filter'].map({True: '✓ Yes', False: '✗ No'})
         display_df = display_df.rename(columns={
@@ -1566,8 +1563,17 @@ with tab3:
             'Used_in_Filter': 'Used in Filtered Data'
         })
         
-        styled_df = display_df.style.apply(highlight_accounts, axis=1)
-        st.dataframe(styled_df, use_container_width=True, height=600)
+        # Create styling function that uses indices to access original values
+        def highlight_accounts(row):
+            idx = row.name
+            if not original_used.iloc[idx]:
+                return [''] * len(row)  # No highlighting for unused accounts
+            elif original_classification.iloc[idx] == 'Healthcare':
+                return ['background-color: #d1fae5'] * len(row)  # Light green
+            else:
+                return ['background-color: #dbeafe'] * len(row)  # Light blue
+        
+        st.dataframe(display_df.style.apply(highlight_accounts, axis=1), use_container_width=True, height=600)
         
         # Detailed breakdown
         with st.expander("📊 Detailed Account Analysis"):
