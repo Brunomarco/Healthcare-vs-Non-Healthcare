@@ -1282,7 +1282,8 @@ for sheet_name in xls.sheet_names:
         sheet_df = pd.read_excel(xls, sheet_name=sheet_name)
         if 'ACCT NM' in sheet_df.columns:
             # Get unique accounts from this sheet with their row count
-            accounts_in_sheet = sheet_df.groupby('ACCT NM').size().reset_index(name='Row_Count')
+            # Use dropna=False to include rows with missing account names
+            accounts_in_sheet = sheet_df.groupby('ACCT NM', dropna=False).size().reset_index(name='Row_Count')
             accounts_in_sheet['Source_Sheet'] = sheet_name
             
             # Classify each account
@@ -1299,7 +1300,8 @@ if all_accounts_data:
     all_accounts_df = pd.concat(all_accounts_data, ignore_index=True)
     
     # Aggregate by account name across all sheets
-    all_accounts_summary = all_accounts_df.groupby('ACCT NM').agg({
+    # Use dropna=False to include rows with missing account names
+    all_accounts_summary = all_accounts_df.groupby('ACCT NM', dropna=False).agg({
         'Row_Count': 'sum',
         'Classification': 'first',
         'Source_Sheet': lambda x: ', '.join(sorted(set(x)))
@@ -1503,6 +1505,7 @@ with tab3:
         non_hc_accounts = len(all_accounts_summary[all_accounts_summary['Classification'] == 'Non-Healthcare'])
         used_accounts = len(all_accounts_summary[all_accounts_summary['Used_in_Filter'] == True])
         unused_accounts = len(all_accounts_summary[all_accounts_summary['Used_in_Filter'] == False])
+        total_rows_all_accounts = all_accounts_summary['Row_Count'].sum()
         
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
@@ -1515,6 +1518,9 @@ with tab3:
             st.metric("Used in Filter", f"{used_accounts:,}", delta=None, delta_color="normal")
         with col5:
             st.metric("Filtered Out", f"{unused_accounts:,}", delta=None, delta_color="inverse")
+        
+        # Validation info
+        st.info(f"📊 **Total rows across all accounts:** {total_rows_all_accounts:,} rows from all sheets (including rows with missing account names)")
         
         st.markdown("---")
         
