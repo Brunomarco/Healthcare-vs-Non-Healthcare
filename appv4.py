@@ -453,6 +453,9 @@ def read_and_combine_sheets(uploaded):
                 
                 emea_rows = len(df_sheet_emea)
                 
+                # Store EMEA data BEFORE STATUS filter for gross calculations
+                all_data_raw.append(df_sheet_emea.copy())
+                
                 # Apply STATUS filter ONLY if STATUS column exists
                 if 'STATUS' in df_sheet_emea.columns:
                     # Clean STATUS values
@@ -529,14 +532,23 @@ def read_and_combine_sheets(uploaded):
             
             stats['healthcare_rows'] = len(healthcare_df)
             stats['non_healthcare_rows'] = len(non_healthcare_df)
+            
+            # Also create EMEA-only dataframes (without STATUS filter) for gross charts
+            healthcare_df_gross = pd.DataFrame()
+            non_healthcare_df_gross = pd.DataFrame()
+            
+            if all_data_raw:
+                combined_df_gross = pd.concat(all_data_raw, ignore_index=True)
+                healthcare_df_gross = combined_df_gross[combined_df_gross['Is_Healthcare'] == True].copy()
+                non_healthcare_df_gross = combined_df_gross[combined_df_gross['Is_Healthcare'] == False].copy()
         
-        return healthcare_df, non_healthcare_df, stats
+        return healthcare_df, non_healthcare_df, healthcare_df_gross, non_healthcare_df_gross, stats
     
     except Exception as e:
         st.error(f"Error reading file: {str(e)}")
         import traceback
         st.error(f"Traceback: {traceback.format_exc()}")
-        return pd.DataFrame(), pd.DataFrame(), {}
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}
 
 # ---------------- Prep (ROW-LEVEL; each row = one entry) ----------------
 @st.cache_data(show_spinner=False)
@@ -667,7 +679,7 @@ def calc_summary(d: pd.DataFrame):
             round(net,2)   if pd.notna(net)   else np.nan,
             volume_total, exceptions, controllables, uncontrollables, total_revenue)
 
-def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, debug_mode: bool = False):
+def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, debug_mode: bool = False, gross_df: pd.DataFrame = None):
     """Create dashboard view for a specific dataframe (healthcare or non-healthcare)."""
     if df.empty:
         st.info(f"No {tab_name} data available after filtering for EMEA countries and 440-BILLED status.")
@@ -862,157 +874,96 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, de
     st.subheader(f"📊 {tab_name}: Gross Metrics (EMEA, All STATUS)")
     st.info("💡 These charts show EMEA data with ALL STATUS values (not just 440-BILLED)")
     
-    # Get EMEA-filtered data with all STATUS values for gross calculations
-    # Use the uploaded_file that's already available
-    try:
-        gross_data = []
-        xls_gross = pd.ExcelFile(uploaded_file)
+    # Use the gross_df that was passed in (EMEA-only, no STATUS filter)
+    if gross_df is not None and not gross_df.empty:
+        # Process gross data for monthly grouping
+        gross_processed = preprocess(gross_df)
         
-        for sheet_name in xls_gross.sheet_names:
-            try:
-                df_sheet = pd.read_excel(xls_gross, sheet_name=sheet_name)
-                if 'ACCT NM' not in df_sheet.columns:
-                    continue
-                
-                # Apply initial date filter
-                if 'POD DATE/TIME' in df_sheet.columns:
-                    df_sheet['POD DATE/TIME'] = pd.to_datetime(df_sheet['POD DATE/TIME'], errors='coerce')
-                    df_sheet = df_sheet[df_sheet['POD DATE/TIME'] >= start_date_dt]
-                
-                # Classify accounts
-                df_sheet['_is_healthcare'] = df_sheet['ACCT NM'].apply(lambda x: is_healthcare(x, sheet_name))
-                
-                # Filter by tab type (Healthcare or Non-Healthcare)
-                if tab_name == "Healthcare":
-                    df_sheet = df_sheet[df_sheet['_is_healthcare'] == True]
-                else:
-                    df_sheet = df_sheet[df_sheet['_is_healthcare'] == False]
-                
-                # Apply EMEA filter ONLY (keep ALL STATUS values)
-                if 'PU CTRY' in df_sheet.columns:
-                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
-                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].replace(['NAN', 'NONE', '<NA>'], '')
-                    df_sheet = df_sheet[
-                        (df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)) | 
-                        (df_sheet['PU CTRY'] == '') |
-                        (df_sheet['PU CTRY'].isna())
-                    ]
-                
-                if not df_sheet.empty:
-                    gross_data.append(df_sheet)
-            except Exception:
-                continue
-        
-        if gross_data:
-            gross_df = pd.concat(gross_data, ignore_index=True)
+        if not gross_processed.empty:
+            # Get monthly volumes and pieces using the same logic as Net OTP charts
+            gross_vol_pod, gross_pieces_pod, _, _ = monthly_frames(gross_processed)
             
-            # Process for monthly grouping
-            if 'POD DATE/TIME' in gross_df.columns:
-                gross_df['_pod'] = pd.to_datetime(gross_df['POD DATE/TIME'], errors='coerce')
-                gross_df = gross_df.dropna(subset=['_pod'])
+            # Chart 1: Gross Volume
+            st.markdown("### 📦 Gross Volume Month-over-Month")
+            if not gross_vol_pod.empty:
+                fig_gross_vol = go.Figure()
+                fig_gross_vol.add_trace(go.Bar(
+                    x=gross_vol_pod['Month_Display'],
+                    y=gross_vol_pod['Volume'],
+                    name='Gross Volume',
+                    marker_color='#3b82f6',  # Blue
+                    text=[f"{int(v):,}" for v in gross_vol_pod['Volume']],
+                    textposition='outside',
+                    textfont=dict(size=12, color='#1e40af', family="Arial Black")
+                ))
                 
-                if not gross_df.empty:
-                    # Create month columns
-                    gross_df['Month_YYYY_MM'] = gross_df['_pod'].dt.to_period("M").astype(str)
-                    gross_df['Month_Display'] = gross_df['Month_YYYY_MM']
-                    gross_df['Month_Sort'] = gross_df['_pod'].dt.to_period("M")
-                    
-                    # Gross Volume (count of rows)
-                    gross_vol = gross_df.groupby(['Month_YYYY_MM', 'Month_Display', 'Month_Sort']).size().reset_index(name='Volume')
-                    gross_vol = gross_vol.sort_values('Month_Sort')
-                    
-                    # Gross Pieces (sum of PIECES)
-                    if 'PIECES' in gross_df.columns:
-                        gross_pieces = gross_df.groupby(['Month_YYYY_MM', 'Month_Display', 'Month_Sort'])['PIECES'].sum().reset_index(name='Pieces')
-                        gross_pieces = gross_pieces.sort_values('Month_Sort')
-                    else:
-                        gross_pieces = pd.DataFrame()
-                    
-                    # Chart 1: Gross Volume
-                    st.markdown("### 📦 Gross Volume Month-over-Month")
-                    if not gross_vol.empty:
-                        fig_gross_vol = go.Figure()
-                        fig_gross_vol.add_trace(go.Bar(
-                            x=gross_vol['Month_Display'],
-                            y=gross_vol['Volume'],
-                            name='Gross Volume',
-                            marker_color='#3b82f6',  # Blue
-                            text=[f"{int(v):,}" for v in gross_vol['Volume']],
-                            textposition='outside',
-                            textfont=dict(size=12, color='#1e40af', family="Arial Black")
-                        ))
-                        
-                        fig_gross_vol.update_layout(
-                            title=f"Gross Volume by Month - {tab_name} (EMEA, All STATUS)",
-                            height=400,
-                            hovermode="x unified",
-                            plot_bgcolor="white",
-                            xaxis=dict(title="Month", tickangle=-30),
-                            yaxis=dict(title="Volume (Rows)", gridcolor=GRID, showgrid=True),
-                            showlegend=False
-                        )
-                        st.plotly_chart(fig_gross_vol, use_container_width=True, key=f"{tab_name}_gross_vol")
-                        
-                        # Summary stats
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Total Gross Volume", f"{gross_vol['Volume'].sum():,}")
-                        with col2:
-                            st.metric("Avg Monthly Volume", f"{gross_vol['Volume'].mean():,.0f}")
-                        with col3:
-                            peak_month = gross_vol.loc[gross_vol['Volume'].idxmax(), 'Month_Display']
-                            peak_vol = gross_vol['Volume'].max()
-                            st.metric("Peak Month", f"{peak_month}: {peak_vol:,}")
-                    else:
-                        st.info("No gross volume data available")
-                    
-                    st.markdown("---")
-                    
-                    # Chart 2: Gross Pieces
-                    st.markdown("### 📦 Gross Pieces Month-over-Month")
-                    if not gross_pieces.empty:
-                        fig_gross_pieces = go.Figure()
-                        fig_gross_pieces.add_trace(go.Bar(
-                            x=gross_pieces['Month_Display'],
-                            y=gross_pieces['Pieces'],
-                            name='Gross Pieces',
-                            marker_color='#10b981',  # Green
-                            text=[f"{int(v):,}" for v in gross_pieces['Pieces']],
-                            textposition='outside',
-                            textfont=dict(size=12, color='#047857', family="Arial Black")
-                        ))
-                        
-                        fig_gross_pieces.update_layout(
-                            title=f"Gross Pieces by Month - {tab_name} (EMEA, All STATUS)",
-                            height=400,
-                            hovermode="x unified",
-                            plot_bgcolor="white",
-                            xaxis=dict(title="Month", tickangle=-30),
-                            yaxis=dict(title="Pieces", gridcolor=GRID, showgrid=True),
-                            showlegend=False
-                        )
-                        st.plotly_chart(fig_gross_pieces, use_container_width=True, key=f"{tab_name}_gross_pieces")
-                        
-                        # Summary stats
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Total Gross Pieces", f"{gross_pieces['Pieces'].sum():,.0f}")
-                        with col2:
-                            st.metric("Avg Monthly Pieces", f"{gross_pieces['Pieces'].mean():,.0f}")
-                        with col3:
-                            peak_month = gross_pieces.loc[gross_pieces['Pieces'].idxmax(), 'Month_Display']
-                            peak_pieces = gross_pieces['Pieces'].max()
-                            st.metric("Peak Month", f"{peak_month}: {peak_pieces:,.0f}")
-                    else:
-                        st.info("No gross pieces data available (PIECES column may be missing)")
-                else:
-                    st.info("No data with valid POD dates for gross calculations")
+                fig_gross_vol.update_layout(
+                    title=f"Gross Volume by Month - {tab_name} (EMEA, All STATUS)",
+                    height=400,
+                    hovermode="x unified",
+                    plot_bgcolor="white",
+                    xaxis=dict(title="Month", tickangle=-30),
+                    yaxis=dict(title="Volume (Rows)", gridcolor=GRID, showgrid=True),
+                    showlegend=False
+                )
+                st.plotly_chart(fig_gross_vol, use_container_width=True, key=f"{tab_name}_gross_vol")
+                
+                # Summary stats
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Gross Volume", f"{gross_vol_pod['Volume'].sum():,}")
+                with col2:
+                    st.metric("Avg Monthly Volume", f"{gross_vol_pod['Volume'].mean():,.0f}")
+                with col3:
+                    peak_month = gross_vol_pod.loc[gross_vol_pod['Volume'].idxmax(), 'Month_Display']
+                    peak_vol = gross_vol_pod['Volume'].max()
+                    st.metric("Peak Month", f"{peak_month}: {peak_vol:,}")
             else:
-                st.info("POD DATE/TIME column not available for gross calculations")
+                st.info("No gross volume data available")
+            
+            st.markdown("---")
+            
+            # Chart 2: Gross Pieces
+            st.markdown("### 📦 Gross Pieces Month-over-Month")
+            if not gross_pieces_pod.empty:
+                fig_gross_pieces = go.Figure()
+                fig_gross_pieces.add_trace(go.Bar(
+                    x=gross_pieces_pod['Month_Display'],
+                    y=gross_pieces_pod['Pieces'],
+                    name='Gross Pieces',
+                    marker_color='#10b981',  # Green
+                    text=[f"{int(v):,}" for v in gross_pieces_pod['Pieces']],
+                    textposition='outside',
+                    textfont=dict(size=12, color='#047857', family="Arial Black")
+                ))
+                
+                fig_gross_pieces.update_layout(
+                    title=f"Gross Pieces by Month - {tab_name} (EMEA, All STATUS)",
+                    height=400,
+                    hovermode="x unified",
+                    plot_bgcolor="white",
+                    xaxis=dict(title="Month", tickangle=-30),
+                    yaxis=dict(title="Pieces", gridcolor=GRID, showgrid=True),
+                    showlegend=False
+                )
+                st.plotly_chart(fig_gross_pieces, use_container_width=True, key=f"{tab_name}_gross_pieces")
+                
+                # Summary stats
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Gross Pieces", f"{gross_pieces_pod['Pieces'].sum():,.0f}")
+                with col2:
+                    st.metric("Avg Monthly Pieces", f"{gross_pieces_pod['Pieces'].mean():,.0f}")
+                with col3:
+                    peak_month = gross_pieces_pod.loc[gross_pieces_pod['Pieces'].idxmax(), 'Month_Display']
+                    peak_pieces = gross_pieces_pod['Pieces'].max()
+                    st.metric("Peak Month", f"{peak_month}: {peak_pieces:,.0f}")
+            else:
+                st.info("No gross pieces data available (PIECES column may be missing)")
         else:
-            st.info("No EMEA data available for gross calculations")
-    except Exception as e:
-        st.error(f"Error generating gross charts: {str(e)}")
+            st.info("No data with valid POD dates for gross calculations")
+    else:
+        st.info("No EMEA data available for gross calculations")
 
     st.markdown("---")
 
@@ -1431,7 +1382,7 @@ if not uploaded_file:
 
 # Process uploaded file
 with st.spinner("Processing ALL sheets and ALL rows from Excel file..."):
-    healthcare_df, non_healthcare_df, stats = read_and_combine_sheets(uploaded_file)
+    healthcare_df, non_healthcare_df, healthcare_df_gross, non_healthcare_df_gross, stats = read_and_combine_sheets(uploaded_file)
 
 # ---------------- NEW: Collect ALL accounts from ALL sheets WITH FILTER REASONS ----------------
 all_accounts_data = []
@@ -1703,7 +1654,7 @@ with tab1:
                     st.write("Month grouping (YYYY-MM):")
                     st.write(test_dates.dt.to_period("M").astype(str).to_list())
     
-    create_dashboard_view(healthcare_df, "Healthcare", otp_target, debug_mode)
+    create_dashboard_view(healthcare_df, "Healthcare", otp_target, debug_mode, healthcare_df_gross)
 
 with tab2:
     st.markdown("## Non-Healthcare Sector Analysis")
@@ -1732,7 +1683,7 @@ with tab2:
                     st.write("Month grouping (YYYY-MM):")
                     st.write(test_dates.dt.to_period("M").astype(str).to_list())
     
-    create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode)
+    create_dashboard_view(non_healthcare_df, "Non-Healthcare", otp_target, debug_mode, non_healthcare_df_gross)
 
 # NEW TAB: All Accounts Overview
 with tab3:
