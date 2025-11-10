@@ -8,39 +8,102 @@ from datetime import datetime
 import plotly.express as px
 
 # ---------------- Page & Style ----------------
-st.set_page_config(page_title="Healthcare vs Non-Healthcare Dashboard", page_icon="📊",
+st.set_page_config(page_title="Marken Healthcare Logistics Dashboard", page_icon="🌐",
                    layout="wide", initial_sidebar_state="collapsed")
 
-# Define colors
-NAVY  = "#0b1f44"      # bars / gauge
-GOLD  = "#f0b429"      # net line
-BLUE  = "#1f77b4"      # gross line
-GREEN = "#10b981"      # alt net
-SLATE = "#334155"
+# Define Marken brand colors
+MARKEN_NAVY = "#003865"      # Marken primary navy blue
+MARKEN_GREEN = "#8DC63F"     # Marken green
+MARKEN_LIGHT_BLUE = "#0075BE"  # Secondary blue
+MARKEN_GRAY = "#58595B"      # Text gray
+MARKEN_LIGHT_GRAY = "#F5F5F5"  # Background gray
+
+# Chart colors aligned with Marken branding
+NAVY  = MARKEN_NAVY          # bars / gauge
+GOLD  = MARKEN_GREEN         # net line (changed to green)
+BLUE  = MARKEN_LIGHT_BLUE    # gross line
+GREEN = MARKEN_GREEN         # alt net
+SLATE = MARKEN_GRAY
 GRID  = "#e5e7eb"
-RED   = "#dc2626"
-EMERALD = "#059669"
+RED   = "#DC2626"            # Keep red for alerts
+EMERALD = MARKEN_GREEN
 
 st.markdown("""
 <style>
-.main {padding: 0rem 1rem;}
-h1 {color:#0b1f44;font-weight:800;letter-spacing:.2px;border-bottom:3px solid #2ecc71;padding-bottom:10px;}
-h2 {color:#0b1f44;font-weight:700;margin-top:1.2rem;margin-bottom:.6rem;}
-.kpi {background:#fff;border:1px solid #e6e6e6;border-radius:14px;padding:14px;}
-.k-num {font-size:36px;font-weight:800;color:#0b1f44;line-height:1.0;}
-.k-cap {font-size:13px;color:#6b7280;margin-top:4px;}
-.stTabs [data-baseweb="tab-list"] {gap: 8px;}
-.stTabs [data-baseweb="tab"] {height: 50px;padding-left: 24px;padding-right: 24px;background-color: #f8f9fa;border-radius: 8px 8px 0 0;}
-.stTabs [aria-selected="true"] {background-color: #0b1f44;color: white;}
-.metric-card {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:12px;padding:20px;color:white;}
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap');
+
+.main {padding: 0rem 1rem; font-family: 'Open Sans', sans-serif;}
+h1 {color:#003865;font-weight:800;font-family:'Open Sans', sans-serif;letter-spacing:.2px;border-bottom:3px solid #8DC63F;padding-bottom:10px;}
+h2 {color:#003865;font-weight:700;font-family:'Open Sans', sans-serif;margin-top:1.2rem;margin-bottom:.6rem;}
+h3 {color:#003865;font-weight:600;font-family:'Open Sans', sans-serif;}
+.kpi {background:#fff;border:2px solid #e6e6e6;border-radius:8px;padding:16px;box-shadow: 0 1px 3px rgba(0,56,101,0.1);transition: all 0.3s;}
+.kpi:hover {border-color:#8DC63F;box-shadow: 0 4px 8px rgba(141,198,63,0.2);}
+.k-num {font-size:36px;font-weight:800;color:#003865;line-height:1.0;font-family:'Open Sans', sans-serif;}
+.k-cap {font-size:13px;color:#58595B;margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+.stTabs [data-baseweb="tab-list"] {gap: 8px; background-color: #F5F5F5; padding: 8px; border-radius: 8px;}
+.stTabs [data-baseweb="tab"] {height: 50px;padding-left: 24px;padding-right: 24px;background-color: white;border-radius: 6px;font-weight: 600;color: #58595B;}
+.stTabs [aria-selected="true"] {background-color: #003865;color: white;box-shadow: 0 2px 4px rgba(0,56,101,0.2);}
+.metric-card {background: linear-gradient(135deg, #003865 0%, #0075BE 100%);border-radius:12px;padding:20px;color:white;}
 .perf-table {border-radius:8px;overflow:hidden;box-shadow:0 2px 4px rgba(0,0,0,0.1);}
-.dataframe {font-size: 14px !important;}
-.dataframe td {padding: 8px !important;}
-.dataframe th {padding: 10px !important; background-color: #f3f4f6 !important; font-weight: 600 !important;}
+.dataframe {font-size: 14px !important; font-family: 'Open Sans', sans-serif !important;}
+.dataframe td {padding: 8px !important; border-bottom: 1px solid #f0f0f0 !important;}
+.dataframe th {padding: 10px !important; background-color: #003865 !important; color: white !important; font-weight: 600 !important;}
+.stButton>button {background-color: #8DC63F; color: white; font-weight: 600; border: none; padding: 8px 20px; border-radius: 6px; transition: all 0.3s;}
+.stButton>button:hover {background-color: #7AB532; box-shadow: 0 2px 6px rgba(141,198,63,0.3);}
+.stSelectbox label {color: #003865; font-weight: 600;}
+.stMetric label {color: #58595B; font-weight: 600; text-transform: uppercase; font-size: 11px;}
+.stMetric [data-testid="metric-container"] {background-color: white; padding: 12px; border-radius: 8px; border: 1px solid #e6e6e6; box-shadow: 0 1px 3px rgba(0,56,101,0.05);}
+
+/* Marken Logo Header */
+.marken-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 0;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #f0f0f0;
+}
+.marken-logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+.marken-logo-symbol {
+    color: #8DC63F;
+    font-size: 36px;
+    font-weight: 800;
+}
+.marken-logo-text {
+    color: #003865;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+.marken-tagline {
+    color: #58595B;
+    font-size: 14px;
+    font-weight: 500;
+}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Healthcare & Non-Healthcare Dashboard")
+# Add Marken Logo Header
+st.markdown("""
+<div class="marken-header">
+    <div class="marken-logo">
+        <span class="marken-logo-symbol">XX</span>
+        <div>
+            <div class="marken-logo-text">MARKEN</div>
+            <div class="marken-tagline">UPS Healthcare Precision Logistics</div>
+        </div>
+    </div>
+    <div style="text-align: right; color: #58595B; font-size: 14px;">
+        Healthcare & Non-Healthcare Dashboard | OTP Analysis
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.title("Healthcare Logistics Performance Dashboard")
 
 # ---------------- Config ----------------
 OTP_TARGET = 95
@@ -162,20 +225,29 @@ def is_healthcare(account_name, sheet_name=None):
     return False
 
 def make_semi_gauge(title: str, value: float) -> go.Figure:
-    """Semi-donut gauge with centered %."""
+    """Semi-donut gauge with centered % - Marken branded."""
     v = max(0.0, min(100.0, 0.0 if pd.isna(value) else float(value)))
     fig = go.Figure()
+    
+    # Determine color based on performance
+    if v >= 95:
+        gauge_color = MARKEN_GREEN  # Good performance
+    elif v >= 85:
+        gauge_color = MARKEN_LIGHT_BLUE  # Moderate performance
+    else:
+        gauge_color = MARKEN_NAVY  # Needs improvement
+    
     fig.add_trace(go.Pie(
         values=[v, 100 - v, 100],
         hole=0.75, sort=False, direction="clockwise", rotation=180,
         textinfo="none", showlegend=False,
-        marker=dict(colors=[NAVY, "#d1d5db", "rgba(0,0,0,0)"])
+        marker=dict(colors=[gauge_color, "#f0f0f0", "rgba(0,0,0,0)"])
     ))
     fig.add_annotation(text=f"{v:.2f}%", x=0.5, y=0.5, xref="paper", yref="paper",
-                       showarrow=False, font=dict(size=26, color=NAVY, family="Arial Black"))
+                       showarrow=False, font=dict(size=26, color=MARKEN_NAVY, family="Open Sans, sans-serif"))
     fig.add_annotation(text=title, x=0.5, y=1.18, xref="paper", yref="paper",
-                       showarrow=False, font=dict(size=14, color=SLATE))
-    fig.update_layout(margin=dict(l=10, r=10, t=36, b=0), height=180)
+                       showarrow=False, font=dict(size=14, color=MARKEN_GRAY, family="Open Sans, sans-serif"))
+    fig.update_layout(margin=dict(l=10, r=10, t=36, b=0), height=180, paper_bgcolor="rgba(0,0,0,0)")
     return fig
 
 def analyze_monthly_changes(df: pd.DataFrame, metric: str = 'TOTAL CHARGES'):
@@ -856,22 +928,31 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
 
     with st.expander("Month & logic"):
         st.markdown(f"""
-    **{tab_name} Data Processing:**
-    - **Each row = one entry** (no shipment deduplication).
-    - **Filter**: EMEA countries only, STATUS = 440-BILLED
-    - Month basis: **POD DATE/TIME → YYYY-MM** (e.g., `2025-03-17 00:55` → `2025-03`)
-    - **Volume** = number of rows with a POD in the month.
-    - **Pieces** = sum(`PIECES`) across those rows in the month.
-    - **Revenue** = sum(`TOTAL CHARGES`) across those rows in the month.
-    - **Gross OTP** = `POD ≤ target (UPD DEL → QDT)`.
-    - **Net/Adjusted OTP** = counts **non-controllable** lates as on-time (QC NAME contains Agent/Delivery agent/Customs/Warehouse) ⇒ **Net ≥ Gross**.
-    """)
+    <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; border-left: 4px solid #8DC63F;">
+    <h4 style="color: #003865; font-weight: 600;">{tab_name} Data Processing:</h4>
+    <ul style="color: #58595B; line-height: 1.6;">
+    <li><b>Each row = one entry</b> (no shipment deduplication)</li>
+    <li><b>Filter:</b> EMEA countries only, STATUS = 440-BILLED</li>
+    <li>Month basis: <b>POD DATE/TIME → YYYY-MM</b> (e.g., 2025-03-17 00:55 → 2025-03)</li>
+    <li><b>Volume</b> = number of rows with a POD in the month</li>
+    <li><b>Pieces</b> = sum(PIECES) across those rows in the month</li>
+    <li><b>Revenue</b> = sum(TOTAL CHARGES) across those rows in the month</li>
+    <li><b>Gross OTP</b> = POD ≤ target (UPD DEL → QDT)</li>
+    <li><b>Net/Adjusted OTP</b> = counts non-controllable lates as on-time (QC NAME contains Agent/Delivery agent/Customs/Warehouse) ⇒ Net ≥ Gross</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("---")
     
     # ---------------- NEW: Gross Volume & Gross Pieces Charts (EMEA, All STATUS) ----------------
     st.subheader(f"📊 {tab_name}: Gross Metrics (EMEA, All STATUS)")
-    st.info("💡 These charts show EMEA data with ALL STATUS values (not just 440-BILLED)")
+    st.markdown("""
+    <div style="background-color: #E8F5E9; padding: 12px; border-radius: 8px; margin-bottom: 20px;">
+        <span style="color: #003865; font-weight: 600;">💡 Note:</span>
+        <span style="color: #58595B;"> These charts show EMEA data with ALL STATUS values (not just 440-BILLED)</span>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Use the gross_df that was passed in (EMEA-only, no STATUS filter)
     if gross_df is not None and not gross_df.empty:
@@ -1432,6 +1513,15 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
 # ---------------- Main Application ----------------
 # Sidebar
 with st.sidebar:
+    st.markdown("""
+    <div style="text-align: center; padding: 20px 0;">
+        <div style="color: #8DC63F; font-size: 28px; font-weight: 800;">XX</div>
+        <div style="color: #003865; font-size: 20px; font-weight: 700; letter-spacing: 1px;">MARKEN</div>
+        <div style="color: #58595B; font-size: 11px; margin-top: 5px;">UPS Healthcare Precision Logistics</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
     st.markdown("### 📁 Data Upload")
     uploaded_file = st.file_uploader("Upload Excel (.xlsx) file", type=["xlsx"])
     
@@ -1444,77 +1534,107 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📊 About this Dashboard")
     st.markdown("""
-    This dashboard analyzes On-Time Performance (OTP) for:
-    - **Healthcare**: Medical, pharmaceutical, and life science companies
-    - **Non-Healthcare**: Aviation, logistics, and other industries  
-    - **RadioPharma**: Radiopharmaceutical data (EMEA countries only)
+    <div style="font-size: 13px; color: #58595B;">
+    This Marken dashboard analyzes On-Time Performance (OTP) for:
     
-    **Data Processing:**
-    - Reads **ALL SHEETS** from Excel file
-    - Processes **ALL ROWS** from each sheet
-    - **All sheets**: Apply EMEA and STATUS filters where applicable
-    - **RadioPharma**: Filters for EMEA (DE, GB, IL, IT) + 440-BILLED
-    - Month grouping by POD DATE/TIME
+    <b style="color: #003865;">• Healthcare:</b> Medical, pharmaceutical, and life science companies<br>
+    <b style="color: #003865;">• Non-Healthcare:</b> Aviation, logistics, and other industries<br>
+    <b style="color: #003865;">• RadioPharma:</b> Radiopharmaceutical data (EMEA countries only)<br><br>
     
-    **Key Features:**
-    - RadioPharma: EMEA-filtered analysis
-    - Healthcare/Non-Healthcare: EMEA + 440-BILLED filtered
-    - Gross metrics (EMEA only, All STATUS)
-    - Account classification overview
-    - Month-over-month performance analysis
-    """)
+    <b>Data Processing:</b><br>
+    • Reads ALL SHEETS from Excel file<br>
+    • Processes ALL ROWS from each sheet<br>
+    • All sheets: Apply EMEA and STATUS filters where applicable<br>
+    • RadioPharma: Filters for EMEA (DE, GB, IL, IT) + 440-BILLED<br>
+    • Month grouping by POD DATE/TIME<br><br>
+    
+    <b>Key Features:</b><br>
+    • RadioPharma: EMEA-filtered analysis<br>
+    • Healthcare/Non-Healthcare: EMEA + 440-BILLED filtered<br>
+    • Gross metrics (EMEA only, All STATUS)<br>
+    • Account classification overview<br>
+    • Month-over-month performance analysis
+    </div>
+    """, unsafe_allow_html=True)
 
 if not uploaded_file:
-    st.info("""
-    ## 📚 How to Build the Excel File
-    
-    **Step-by-step instructions:**
-    1. **Go to TMS** → Navigate to Reports
-    2. **Export Data** → Select "Shipment Report AH VAR" (from Alberto)
-    3. **Download Excel files** with DEL DATE ACT (specify your desired time range) for the following offices:
-       - Americas International Desk
-       - Amsterdam
-       - London
-       - MNX Charter
-       - Aviation Services
-       - RadioPharma
-    4. **Merge all sheets** into a single Excel file with sheets named in this exact order:
-       - Aviation SVC
-       - MNX Charter
-       - AMS
-       - LDN
-       - Americas International Desk
-       - RadioPharma
-    5. **Upload the merged Excel file** using the upload button below
-    
-    ---
-    
-    👆 **Please upload your Excel file to begin.**
-    
-    **File processing:**
-    - Reads **EVERY SINGLE SHEET** from the Excel file
-    - Captures **EVERY SINGLE ROW** from each sheet
-    - Filters are applied ONLY if the columns exist:
-      - EMEA filter: Applied only if 'PU CTRY' column exists
-      - Status filter: Applied only if 'STATUS' column exists
-    - **RadioPharma sheet**: Filtered for EMEA countries (DE, GB, IL, IT) and 440-BILLED status
-    - Rows with missing values in filter columns are KEPT
-    - Categorizes accounts as Healthcare or Non-Healthcare
-    - Calculates OTP metrics by POD month
-    - Analyzes month-over-month performance changes
-    
-    **Required columns:**
-    - POD DATE/TIME (for monthly grouping)
-    - ACCT NM (for account categorization)
-    
-    **Optional columns:**
-    - PU CTRY (for EMEA filtering)
-    - STATUS (for 440-BILLED filtering)
-    - UPD DEL or QDT (for OTP calculations)
-    - QC NAME (for controllability analysis)
-    - PIECES (for volume metrics)
-    - TOTAL CHARGES (for revenue analysis)
-    """)
+    st.markdown("""
+    <div style="background-color: #f9f9f9; border-radius: 10px; padding: 30px; border: 2px solid #8DC63F;">
+        <h2 style="color: #003865; font-weight: 700; margin-bottom: 20px;">📚 How to Build the Excel File</h2>
+        
+        <div style="background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h3 style="color: #003865; font-weight: 600; margin-bottom: 15px;">Step-by-step instructions:</h3>
+            <ol style="color: #58595B; line-height: 1.8;">
+                <li><b style="color: #003865;">Go to TMS</b> → Navigate to Reports</li>
+                <li><b style="color: #003865;">Export Data</b> → Select "Shipment Report AH VAR" (from Alberto)</li>
+                <li><b style="color: #003865;">Download Excel files</b> with DEL DATE ACT (specify your desired time range) for:
+                    <ul style="margin-top: 10px;">
+                        <li>Americas International Desk</li>
+                        <li>Amsterdam</li>
+                        <li>London</li>
+                        <li>MNX Charter</li>
+                        <li>Aviation Services</li>
+                        <li>RadioPharma</li>
+                    </ul>
+                </li>
+                <li><b style="color: #003865;">Merge all sheets</b> into a single Excel file with sheets named in this exact order:
+                    <ul style="margin-top: 10px;">
+                        <li>Aviation SVC</li>
+                        <li>MNX Charter</li>
+                        <li>AMS</li>
+                        <li>LDN</li>
+                        <li>Americas International Desk</li>
+                        <li>RadioPharma</li>
+                    </ul>
+                </li>
+                <li><b style="color: #003865;">Upload the merged Excel file</b> using the upload button below</li>
+            </ol>
+        </div>
+        
+        <hr style="border: 1px solid #e0e0e0; margin: 25px 0;">
+        
+        <div style="text-align: center;">
+            <h3 style="color: #003865; font-weight: 700;">👆 Please upload your Excel file to begin</h3>
+        </div>
+        
+        <div style="background-color: white; padding: 20px; border-radius: 8px; margin-top: 20px;">
+            <h4 style="color: #003865; font-weight: 600; margin-bottom: 15px;">File processing:</h4>
+            <ul style="color: #58595B; line-height: 1.6;">
+                <li>Reads <b>EVERY SINGLE SHEET</b> from the Excel file</li>
+                <li>Captures <b>EVERY SINGLE ROW</b> from each sheet</li>
+                <li>Filters are applied ONLY if the columns exist:
+                    <ul style="margin-top: 5px;">
+                        <li>EMEA filter: Applied only if 'PU CTRY' column exists</li>
+                        <li>Status filter: Applied only if 'STATUS' column exists</li>
+                    </ul>
+                </li>
+                <li><b style="color: #003865;">RadioPharma sheet:</b> Filtered for EMEA countries (DE, GB, IL, IT) and 440-BILLED status</li>
+                <li>Rows with missing values in filter columns are KEPT</li>
+                <li>Categorizes accounts as Healthcare or Non-Healthcare</li>
+                <li>Calculates OTP metrics by POD month</li>
+                <li>Analyzes month-over-month performance changes</li>
+            </ul>
+        </div>
+        
+        <div style="background-color: white; padding: 20px; border-radius: 8px; margin-top: 20px;">
+            <h4 style="color: #003865; font-weight: 600; margin-bottom: 15px;">Required columns:</h4>
+            <ul style="color: #58595B; line-height: 1.6;">
+                <li><b>POD DATE/TIME</b> (for monthly grouping)</li>
+                <li><b>ACCT NM</b> (for account categorization)</li>
+            </ul>
+            
+            <h4 style="color: #003865; font-weight: 600; margin-top: 15px; margin-bottom: 15px;">Optional columns:</h4>
+            <ul style="color: #58595B; line-height: 1.6;">
+                <li><b>PU CTRY</b> (for EMEA filtering)</li>
+                <li><b>STATUS</b> (for 440-BILLED filtering)</li>
+                <li><b>UPD DEL or QDT</b> (for OTP calculations)</li>
+                <li><b>QC NAME</b> (for controllability analysis)</li>
+                <li><b>PIECES</b> (for volume metrics)</li>
+                <li><b>TOTAL CHARGES</b> (for revenue analysis)</li>
+            </ul>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # Process uploaded file
@@ -1700,7 +1820,12 @@ with tab2:
 # NEW TAB: RadioPharma
 with tab3:
     st.markdown("## RadioPharma Analysis")
-    st.info("📊 This tab displays RadioPharma data filtered for EMEA countries (DE, GB, IL, IT) and 440-BILLED status")
+    st.markdown("""
+    <div style="background-color: #E8F5E9; padding: 12px; border-radius: 8px; margin-bottom: 20px;">
+        <span style="color: #003865; font-weight: 600;">📊 Scope:</span>
+        <span style="color: #58595B;"> This tab displays RadioPharma data filtered for EMEA countries (DE, GB, IL, IT) and 440-BILLED status</span>
+    </div>
+    """, unsafe_allow_html=True)
     if not radiopharma_df.empty:
         st.markdown(f"**Total RadioPharma Entries (EMEA only):** {len(radiopharma_df):,}")
         # Show sample accounts
