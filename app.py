@@ -447,58 +447,74 @@ def read_and_combine_sheets(uploaded):
                 initial_rows = len(df_sheet)
                 stats['total_rows'] += initial_rows
                 
-                # Apply EMEA filter ONLY if PU CTRY column exists
-                if 'PU CTRY' in df_sheet.columns:
-                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
-                    # Replace nan/None with empty string to avoid filtering them out
-                    df_sheet['PU CTRY'] = df_sheet['PU CTRY'].replace(['NAN', 'NONE', '<NA>'], '')
-                    df_sheet_emea = df_sheet[
-                        (df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)) | 
-                        (df_sheet['PU CTRY'] == '') |
-                        (df_sheet['PU CTRY'].isna())
-                    ]
-                else:
-                    # No PU CTRY column means keep ALL rows
-                    df_sheet_emea = df_sheet
-                
-                emea_rows = len(df_sheet_emea)
-                
-                # Store EMEA-only data (for gross metrics) - RadioPharma separate
-                if len(df_sheet_emea) > 0:
-                    if sheet_name == 'RadioPharma':
-                        radiopharma_emea_only.append(df_sheet_emea.copy())
-                    else:
-                        all_data_emea_only.append(df_sheet_emea.copy())
-                
-                # Apply STATUS filter ONLY if STATUS column exists
-                if 'STATUS' in df_sheet_emea.columns:
-                    # Clean STATUS values
-                    df_sheet_emea['STATUS'] = df_sheet_emea['STATUS'].astype(str).str.strip()
-                    # Keep 440-BILLED and also rows with empty/missing status
-                    df_sheet_final = df_sheet_emea[
-                        (df_sheet_emea['STATUS'] == '440-BILLED') |
-                        (df_sheet_emea['STATUS'] == '') |
-                        (df_sheet_emea['STATUS'] == 'nan') |
-                        (df_sheet_emea['STATUS'].isna())
-                    ]
-                else:
-                    # No STATUS column means keep ALL rows
-                    df_sheet_final = df_sheet_emea
-                
-                final_rows = len(df_sheet_final)
-                
-                stats['by_sheet'][sheet_name] = {
-                    'raw_rows': raw_row_count,
-                    'initial': initial_rows,
-                    'emea': emea_rows,
-                    'final': final_rows
-                }
-                
-                # Add to combined filtered data - RadioPharma separate
-                if len(df_sheet_final) > 0:
-                    if sheet_name == 'RadioPharma':
+                # Special handling for RadioPharma - NO FILTERING
+                if sheet_name == 'RadioPharma':
+                    # For RadioPharma, keep ALL rows without any filtering
+                    df_sheet_emea = df_sheet.copy()
+                    df_sheet_final = df_sheet.copy()
+                    
+                    emea_rows = len(df_sheet_emea)
+                    final_rows = len(df_sheet_final)
+                    
+                    stats['by_sheet'][sheet_name] = {
+                        'raw_rows': raw_row_count,
+                        'initial': initial_rows,
+                        'emea': emea_rows,  # Same as initial for RadioPharma
+                        'final': final_rows,  # Same as initial for RadioPharma
+                        'note': 'No filters applied (RadioPharma)'
+                    }
+                    
+                    # Add to RadioPharma-specific lists
+                    if len(df_sheet_final) > 0:
                         radiopharma_filtered.append(df_sheet_final)
+                        radiopharma_emea_only.append(df_sheet_final.copy())  # Same data for gross
+                else:
+                    # Apply EMEA filter ONLY if PU CTRY column exists (for non-RadioPharma sheets)
+                    if 'PU CTRY' in df_sheet.columns:
+                        df_sheet['PU CTRY'] = df_sheet['PU CTRY'].astype(str).str.strip().str.upper()
+                        # Replace nan/None with empty string to avoid filtering them out
+                        df_sheet['PU CTRY'] = df_sheet['PU CTRY'].replace(['NAN', 'NONE', '<NA>'], '')
+                        df_sheet_emea = df_sheet[
+                            (df_sheet['PU CTRY'].isin(EMEA_COUNTRIES)) | 
+                            (df_sheet['PU CTRY'] == '') |
+                            (df_sheet['PU CTRY'].isna())
+                        ]
                     else:
+                        # No PU CTRY column means keep ALL rows
+                        df_sheet_emea = df_sheet
+                    
+                    emea_rows = len(df_sheet_emea)
+                    
+                    # Store EMEA-only data (for gross metrics) - excluding RadioPharma
+                    if len(df_sheet_emea) > 0:
+                        all_data_emea_only.append(df_sheet_emea.copy())
+                    
+                    # Apply STATUS filter ONLY if STATUS column exists (for non-RadioPharma sheets)
+                    if 'STATUS' in df_sheet_emea.columns:
+                        # Clean STATUS values
+                        df_sheet_emea['STATUS'] = df_sheet_emea['STATUS'].astype(str).str.strip()
+                        # Keep 440-BILLED and also rows with empty/missing status
+                        df_sheet_final = df_sheet_emea[
+                            (df_sheet_emea['STATUS'] == '440-BILLED') |
+                            (df_sheet_emea['STATUS'] == '') |
+                            (df_sheet_emea['STATUS'] == 'nan') |
+                            (df_sheet_emea['STATUS'].isna())
+                        ]
+                    else:
+                        # No STATUS column means keep ALL rows
+                        df_sheet_final = df_sheet_emea
+                    
+                    final_rows = len(df_sheet_final)
+                    
+                    stats['by_sheet'][sheet_name] = {
+                        'raw_rows': raw_row_count,
+                        'initial': initial_rows,
+                        'emea': emea_rows,
+                        'final': final_rows
+                    }
+                    
+                    # Add to combined filtered data - excluding RadioPharma
+                    if len(df_sheet_final) > 0:
                         all_data_filtered.append(df_sheet_final)
                     
             except Exception as e:
@@ -617,14 +633,11 @@ def read_and_combine_sheets(uploaded):
                     from_radiopharma = 'RadioPharma' in account_rows['Source_Sheet'].unique()
                     
                     # Determine classification
-                    if not is_emea:
+                    if from_radiopharma:
+                        # All RadioPharma accounts are used (no filtering applied)
+                        classification = 'RadioPharma'
+                    elif not is_emea:
                         classification = 'Not Used (Non-EMEA)'
-                    elif from_radiopharma:
-                        # Check if actually used in RadioPharma (EMEA + 440-BILLED)
-                        if not radiopharma_df.empty and account in radiopharma_df['ACCT NM'].values:
-                            classification = 'RadioPharma (Used)'
-                        else:
-                            classification = 'RadioPharma (Not Used - Status Filter)'
                     else:
                         # Check healthcare classification
                         sheet_context = account_rows['Source_Sheet'].iloc[0] if 'Source_Sheet' in account_rows.columns else None
@@ -1442,36 +1455,58 @@ with st.sidebar:
     st.markdown("""
     This dashboard analyzes On-Time Performance (OTP) for:
     - **Healthcare**: Medical, pharmaceutical, and life science companies
-    - **Non-Healthcare**: Aviation, logistics, and other industries
-    - **RadioPharma**: Radiopharmaceutical companies (from RadioPharma sheet)
+    - **Non-Healthcare**: Aviation, logistics, and other industries  
+    - **RadioPharma**: ALL radiopharmaceutical data (no filtering)
     
     **Data Processing:**
     - Reads **ALL SHEETS** from Excel file
     - Processes **ALL ROWS** from each sheet
-    - RadioPharma sheet processed separately
-    - Then filters for EMEA countries (if applicable)
-    - Then filters for STATUS = 440-BILLED (if applicable)
+    - **RadioPharma sheet**: ALL rows processed WITHOUT any filtering
+    - **Other sheets**: Apply EMEA and STATUS filters where applicable
     - Month grouping by POD DATE/TIME
     
-    **New Features:**
-    - RadioPharma dedicated analysis
-    - Gross metrics (EMEA, All STATUS)
-    - Account classification tab
+    **Key Features:**
+    - RadioPharma: Complete unfiltered analysis
+    - Healthcare/Non-Healthcare: EMEA + 440-BILLED filtered
+    - Gross metrics (EMEA only, All STATUS)
+    - Account classification overview
     - Month-over-month performance analysis
-    - Enhanced tables with cross-metrics
-    - Complete row tracking in debug mode
     """)
 
 if not uploaded_file:
     st.info("""
+    ## 📚 How to Build the Excel File
+    
+    **Step-by-step instructions:**
+    1. **Go to TMS** → Navigate to Reports
+    2. **Export Data** → Select "Shipment Report AH VAR" (from Alberto)
+    3. **Download Excel files** with DEL DATE ACT (specify your desired time range) for the following offices:
+       - Americas International Desk
+       - Amsterdam
+       - London
+       - MNX Charter
+       - Aviation Services
+       - RadioPharma
+    4. **Merge all sheets** into a single Excel file with sheets named in this exact order:
+       - Aviation SVC
+       - MNX Charter
+       - AMS
+       - LDN
+       - Americas International Desk
+       - RadioPharma
+    5. **Upload the merged Excel file** using the upload button below
+    
+    ---
+    
     👆 **Please upload your Excel file to begin.**
     
     **File processing:**
     - Reads **EVERY SINGLE SHEET** from the Excel file
     - Captures **EVERY SINGLE ROW** from each sheet
     - Filters are applied ONLY if the columns exist:
-      - EMEA filter: Applied only if 'PU CTRY' column exists
-      - Status filter: Applied only if 'STATUS' column exists
+      - EMEA filter: Applied only if 'PU CTRY' column exists (except RadioPharma)
+      - Status filter: Applied only if 'STATUS' column exists (except RadioPharma)
+    - **RadioPharma sheet**: ALL rows are processed without any filtering
     - Rows with missing values in filter columns are KEPT
     - Categorizes accounts as Healthcare or Non-Healthcare
     - Calculates OTP metrics by POD month
@@ -1674,8 +1709,9 @@ with tab2:
 # NEW TAB: RadioPharma
 with tab3:
     st.markdown("## RadioPharma Analysis")
+    st.info("📊 This tab displays ALL data from the RadioPharma sheet without any EMEA or STATUS filtering")
     if not radiopharma_df.empty:
-        st.markdown(f"**Total RadioPharma Entries:** {len(radiopharma_df):,}")
+        st.markdown(f"**Total RadioPharma Entries:** {len(radiopharma_df):,} (ALL rows from RadioPharma sheet)")
         # Show sample accounts
         with st.expander("Sample RadioPharma Accounts"):
             if 'ACCT NM' in radiopharma_df.columns:
@@ -1701,7 +1737,7 @@ with tab3:
         
         create_dashboard_view(radiopharma_df, "RadioPharma", otp_target, radiopharma_gross_df, debug_mode)
     else:
-        st.info("No RadioPharma data available. Please ensure your Excel file contains a sheet named 'RadioPharma' with data matching EMEA countries and 440-BILLED status.")
+        st.info("No RadioPharma data available. Please ensure your Excel file contains a sheet named 'RadioPharma'.")
 
 # MOVED TAB: Account Classification (now tab4)
 with tab4:
@@ -1735,17 +1771,15 @@ with tab4:
         st.markdown("### Filter Accounts")
         classification_filter = st.selectbox(
             "Show accounts by classification:",
-            options=["All", "Healthcare", "Non-Healthcare", "RadioPharma (All)", "RadioPharma (Used)", "RadioPharma (Not Used - Status Filter)", "Not Used (Non-EMEA)"],
+            options=["All", "Healthcare", "Non-Healthcare", "RadioPharma", "Not Used (Non-EMEA)"],
             index=0
         )
         
         # Filter dataframe
         if classification_filter == "All":
             filtered_df = account_classification
-        elif classification_filter == "RadioPharma (All)":
-            filtered_df = account_classification[account_classification['Classification'].str.contains('RadioPharma')]
-        elif classification_filter in ["RadioPharma (Used)", "RadioPharma (Not Used - Status Filter)", "Not Used (Non-EMEA)"]:
-            filtered_df = account_classification[account_classification['Classification'] == classification_filter]
+        elif classification_filter == "Not Used (Non-EMEA)":
+            filtered_df = account_classification[account_classification['Classification'].str.contains('Not Used')]
         else:
             filtered_df = account_classification[account_classification['Classification'] == classification_filter]
         
@@ -1778,13 +1812,12 @@ with tab4:
         with st.expander("Classification Logic"):
             st.markdown("""
             **How accounts are classified:**
-            1. **Not Used (Non-EMEA)**: Accounts with no shipments to/from EMEA countries
+            1. **Not Used (Non-EMEA)**: Accounts with no shipments to/from EMEA countries (excluding RadioPharma)
             2. **Healthcare**: EMEA accounts matching healthcare keywords or from specific sheets (e.g., AMS) - excluding RadioPharma sheet
             3. **Non-Healthcare**: EMEA accounts not matching healthcare criteria - excluding RadioPharma sheet
-            4. **RadioPharma (Used)**: Accounts from RadioPharma sheet with EMEA + 440-BILLED status
-            5. **RadioPharma (Not Used - Status Filter)**: Accounts from RadioPharma sheet with EMEA but not 440-BILLED
+            4. **RadioPharma**: ALL accounts from the RadioPharma sheet (no filtering applied)
             
-            **Note:** Classification is based on account name patterns and source sheet context. RadioPharma sheet is processed separately.
+            **Note:** RadioPharma sheet is processed WITHOUT any EMEA or STATUS filtering - ALL rows are included.
             """)
         
         # Display the dataframe with styling
@@ -1792,7 +1825,7 @@ with tab4:
             filtered_df.style.apply(
                 lambda x: ['background-color: #e6f3ff' if x['Classification'] == 'Healthcare' 
                           else 'background-color: #fff0e6' if x['Classification'] == 'Non-Healthcare'
-                          else 'background-color: #ffe6e6' if 'RadioPharma' in x['Classification']
+                          else 'background-color: #ffe6e6' if x['Classification'] == 'RadioPharma'
                           else 'background-color: #f5f5f5' for _ in x], axis=1
             ),
             use_container_width=True,
