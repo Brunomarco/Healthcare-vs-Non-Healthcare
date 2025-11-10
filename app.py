@@ -6,6 +6,9 @@ import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime
 import plotly.express as px
+import os
+import base64
+from PIL import Image
 
 # ---------------- Page & Style ----------------
 st.set_page_config(page_title="Marken Healthcare Logistics Dashboard", page_icon="🌐",
@@ -53,55 +56,57 @@ h3 {color:#003865;font-weight:600;font-family:'Open Sans', sans-serif;}
 .stSelectbox label {color: #003865; font-weight: 600;}
 .stMetric label {color: #58595B; font-weight: 600; text-transform: uppercase; font-size: 11px;}
 .stMetric [data-testid="metric-container"] {background-color: white; padding: 12px; border-radius: 8px; border: 1px solid #e6e6e6; box-shadow: 0 1px 3px rgba(0,56,101,0.05);}
-
-/* Marken Logo Header */
-.marken-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 0;
-    margin-bottom: 30px;
-    border-bottom: 2px solid #f0f0f0;
-}
-.marken-logo {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-.marken-logo-symbol {
-    color: #8DC63F;
-    font-size: 36px;
-    font-weight: 800;
-}
-.marken-logo-text {
-    color: #003865;
-    font-size: 32px;
-    font-weight: 700;
-    letter-spacing: 1px;
-}
-.marken-tagline {
-    color: #58595B;
-    font-size: 14px;
-    font-weight: 500;
-}
 </style>
 """, unsafe_allow_html=True)
 
+# Function to load and display logo
+def load_logo():
+    """Load Marken logo if available"""
+    logo_paths = [
+        "/mnt/user-data/uploads/1762775253257_image.png",
+        "/home/claude/marken_logo.png",
+        "marken_logo.png"
+    ]
+    
+    for logo_path in logo_paths:
+        if os.path.exists(logo_path):
+            return Image.open(logo_path)
+    return None
+
 # Add Marken Logo Header
-st.markdown("""
-<div class="marken-header">
-    <div class="marken-logo">
-        <span class="marken-logo-symbol">XX</span>
-        <div>
-            <div class="marken-logo-text">MARKEN</div>
-            <div class="marken-tagline">UPS Healthcare Precision Logistics</div>
+logo_image = load_logo()
+
+if logo_image:
+    # Create header with logo
+    col1, col2, col3 = st.columns([2, 3, 2])
+    
+    with col1:
+        st.image(logo_image, width=250)
+    
+    with col3:
+        st.markdown("""
+        <div style="text-align: right; padding-top: 20px;">
+            <span style="color: #58595B; font-size: 14px;">Healthcare & Non-Healthcare Dashboard</span><br>
+            <span style="color: #003865; font-size: 16px; font-weight: 600;">OTP Performance Analysis</span>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<hr style='border: 1px solid #e0e0e0; margin: 10px 0 20px 0;'>", unsafe_allow_html=True)
+else:
+    # Fallback header if logo not found
+    st.markdown("""
+    <div class="marken-header">
+        <div class="marken-logo">
+            <div>
+                <div class="marken-logo-text" style="color: #003865; font-size: 32px; font-weight: 700;">MARKEN</div>
+                <div class="marken-tagline" style="color: #58595B; font-size: 14px;">a UPS Company</div>
+            </div>
+        </div>
+        <div style="text-align: right; color: #58595B; font-size: 14px;">
+            Healthcare & Non-Healthcare Dashboard | OTP Analysis
         </div>
     </div>
-    <div style="text-align: right; color: #58595B; font-size: 14px;">
-        Healthcare & Non-Healthcare Dashboard | OTP Analysis
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 st.title("Healthcare Logistics Performance Dashboard")
 
@@ -1513,15 +1518,19 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
 # ---------------- Main Application ----------------
 # Sidebar
 with st.sidebar:
-    st.markdown("""
-    <div style="text-align: center; padding: 20px 0;">
-        <div style="color: #8DC63F; font-size: 28px; font-weight: 800;">XX</div>
-        <div style="color: #003865; font-size: 20px; font-weight: 700; letter-spacing: 1px;">MARKEN</div>
-        <div style="color: #58595B; font-size: 11px; margin-top: 5px;">UPS Healthcare Precision Logistics</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("---")
+    # Try to display logo in sidebar
+    logo_image_sidebar = load_logo()
+    if logo_image_sidebar:
+        st.image(logo_image_sidebar, width=200)
+        st.markdown("---")
+    else:
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <div style="color: #003865; font-size: 20px; font-weight: 700; letter-spacing: 1px;">MARKEN</div>
+            <div style="color: #58595B; font-size: 11px; margin-top: 5px;">a UPS Company</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("---")
     st.markdown("### 📁 Data Upload")
     uploaded_file = st.file_uploader("Upload Excel (.xlsx) file", type=["xlsx"])
     
