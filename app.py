@@ -1558,83 +1558,97 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 if not uploaded_file:
-    st.markdown("""
-    <div style="background-color: #f9f9f9; border-radius: 10px; padding: 30px; border: 2px solid #8DC63F;">
-        <h2 style="color: #003865; font-weight: 700; margin-bottom: 20px;">📚 How to Build the Excel File</h2>
+    # Marken-style colored container using columns for layout
+    col1, col2, col3 = st.columns([0.5, 6, 0.5])
+    
+    with col2:
+        # Title with Marken colors
+        st.markdown("""
+        <h2 style="color: #003865; font-weight: 700; border-bottom: 3px solid #8DC63F; padding-bottom: 10px;">
+        📚 How to Build the Excel File
+        </h2>
+        """, unsafe_allow_html=True)
         
-        <div style="background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h3 style="color: #003865; font-weight: 600; margin-bottom: 15px;">Step-by-step instructions:</h3>
-            <ol style="color: #58595B; line-height: 1.8;">
-                <li><b style="color: #003865;">Go to TMS</b> → Navigate to Reports</li>
-                <li><b style="color: #003865;">Export Data</b> → Select "Shipment Report AH VAR" (from Alberto)</li>
-                <li><b style="color: #003865;">Download Excel files</b> with DEL DATE ACT (specify your desired time range) for:
-                    <ul style="margin-top: 10px;">
-                        <li>Americas International Desk</li>
-                        <li>Amsterdam</li>
-                        <li>London</li>
-                        <li>MNX Charter</li>
-                        <li>Aviation Services</li>
-                        <li>RadioPharma</li>
-                    </ul>
-                </li>
-                <li><b style="color: #003865;">Merge all sheets</b> into a single Excel file with sheets named in this exact order:
-                    <ul style="margin-top: 10px;">
-                        <li>Aviation SVC</li>
-                        <li>MNX Charter</li>
-                        <li>AMS</li>
-                        <li>LDN</li>
-                        <li>Americas International Desk</li>
-                        <li>RadioPharma</li>
-                    </ul>
-                </li>
-                <li><b style="color: #003865;">Upload the merged Excel file</b> using the upload button below</li>
-            </ol>
-        </div>
+        # Instructions section
+        st.markdown("""
+        <h3 style="color: #003865; font-weight: 600;">Step-by-step instructions:</h3>
+        """, unsafe_allow_html=True)
         
-        <hr style="border: 1px solid #e0e0e0; margin: 25px 0;">
+        st.markdown("""
+        1. **Go to TMS** → Navigate to Reports
+        2. **Export Data** → Select "Shipment Report AH VAR" (from Alberto)  
+        3. **Download Excel files** with DEL DATE ACT (specify your desired time range) for:
+           - Americas International Desk
+           - Amsterdam
+           - London
+           - MNX Charter
+           - Aviation Services
+           - RadioPharma
+        4. **Merge all sheets** into a single Excel file with sheets named in this exact order:
+           - Aviation SVC
+           - MNX Charter
+           - AMS
+           - LDN
+           - Americas International Desk
+           - RadioPharma
+        5. **Upload the merged Excel file** using the upload button in the sidebar
+        """)
         
-        <div style="text-align: center;">
-            <h3 style="color: #003865; font-weight: 700;">👆 Please upload your Excel file to begin</h3>
-        </div>
+        st.markdown("---")
         
-        <div style="background-color: white; padding: 20px; border-radius: 8px; margin-top: 20px;">
-            <h4 style="color: #003865; font-weight: 600; margin-bottom: 15px;">File processing:</h4>
-            <ul style="color: #58595B; line-height: 1.6;">
-                <li>Reads <b>EVERY SINGLE SHEET</b> from the Excel file</li>
-                <li>Captures <b>EVERY SINGLE ROW</b> from each sheet</li>
-                <li>Filters are applied ONLY if the columns exist:
-                    <ul style="margin-top: 5px;">
-                        <li>EMEA filter: Applied only if 'PU CTRY' column exists</li>
-                        <li>Status filter: Applied only if 'STATUS' column exists</li>
-                    </ul>
-                </li>
-                <li><b style="color: #003865;">RadioPharma sheet:</b> Filtered for EMEA countries (DE, GB, IL, IT) and 440-BILLED status</li>
-                <li>Rows with missing values in filter columns are KEPT</li>
-                <li>Categorizes accounts as Healthcare or Non-Healthcare</li>
-                <li>Calculates OTP metrics by POD month</li>
-                <li>Analyzes month-over-month performance changes</li>
-            </ul>
-        </div>
+        # Upload instruction with Marken styling
+        st.markdown("""
+        <h3 style="color: #003865; font-weight: 700; text-align: center;">
+        👆 Please upload your Excel file to begin
+        </h3>
+        """, unsafe_allow_html=True)
         
-        <div style="background-color: white; padding: 20px; border-radius: 8px; margin-top: 20px;">
-            <h4 style="color: #003865; font-weight: 600; margin-bottom: 15px;">Required columns:</h4>
-            <ul style="color: #58595B; line-height: 1.6;">
-                <li><b>POD DATE/TIME</b> (for monthly grouping)</li>
-                <li><b>ACCT NM</b> (for account categorization)</li>
-            </ul>
+        st.markdown("---")
+        
+        # File processing information
+        with st.expander("📋 **File Processing Details**", expanded=True):
+            st.markdown("""
+            **How the file is processed:**
+            - Reads **EVERY SINGLE SHEET** from the Excel file
+            - Captures **EVERY SINGLE ROW** from each sheet
+            - Filters are applied ONLY if the columns exist:
+              - EMEA filter: Applied only if 'PU CTRY' column exists
+              - Status filter: Applied only if 'STATUS' column exists
+            - **RadioPharma sheet:** Filtered for EMEA countries (DE, GB, IL, IT) and 440-BILLED status
+            - Rows with missing values in filter columns are KEPT
+            - Categorizes accounts as Healthcare or Non-Healthcare
+            - Calculates OTP metrics by POD month
+            - Analyzes month-over-month performance changes
+            """)
+        
+        # Required and optional columns
+        with st.expander("📊 **Required and Optional Columns**", expanded=True):
+            col_a, col_b = st.columns(2)
             
-            <h4 style="color: #003865; font-weight: 600; margin-top: 15px; margin-bottom: 15px;">Optional columns:</h4>
-            <ul style="color: #58595B; line-height: 1.6;">
-                <li><b>PU CTRY</b> (for EMEA filtering)</li>
-                <li><b>STATUS</b> (for 440-BILLED filtering)</li>
-                <li><b>UPD DEL or QDT</b> (for OTP calculations)</li>
-                <li><b>QC NAME</b> (for controllability analysis)</li>
-                <li><b>PIECES</b> (for volume metrics)</li>
-                <li><b>TOTAL CHARGES</b> (for revenue analysis)</li>
-            </ul>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+            with col_a:
+                st.markdown("""
+                **Required columns:**
+                - **POD DATE/TIME** (for monthly grouping)
+                - **ACCT NM** (for account categorization)
+                """)
+            
+            with col_b:
+                st.markdown("""
+                **Optional columns:**
+                - **PU CTRY** (for EMEA filtering)
+                - **STATUS** (for 440-BILLED filtering)
+                - **UPD DEL or QDT** (for OTP calculations)
+                - **QC NAME** (for controllability analysis)
+                - **PIECES** (for volume metrics)
+                - **TOTAL CHARGES** (for revenue analysis)
+                """)
+        
+        # Add some spacing
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Info box with Marken colors
+        st.info("💡 **Tip:** Make sure your Excel file contains all the required columns and follows the sheet naming convention for optimal processing.")
+    
     st.stop()
 
 # Process uploaded file
