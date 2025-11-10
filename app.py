@@ -12,7 +12,7 @@ import io
 from PIL import Image
 
 # ---------------- Page & Style ----------------
-st.set_page_config(page_title="Marken Healthcare Logistics Dashboard", page_icon="🟢",
+st.set_page_config(page_title="Marken Logistics Dashboard", page_icon="🟢",
                    layout="wide", initial_sidebar_state="collapsed")
 
 # Define Marken brand colors
@@ -136,7 +136,7 @@ else:
 
 st.markdown(f"""
 <h1 style="color: #003865; font-weight: 700; text-align: center; margin-top: 20px;">
-Healthcare Logistics Performance Dashboard
+Logistics Performance Dashboard
 </h1>
 """, unsafe_allow_html=True)
 
