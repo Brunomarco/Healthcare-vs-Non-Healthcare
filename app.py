@@ -8,10 +8,11 @@ from datetime import datetime
 import plotly.express as px
 import os
 import base64
+import io
 from PIL import Image
 
 # ---------------- Page & Style ----------------
-st.set_page_config(page_title="Marken Healthcare Logistics Dashboard", page_icon="🌐",
+st.set_page_config(page_title="Marken Healthcare Logistics Dashboard", page_icon="🟢",
                    layout="wide", initial_sidebar_state="collapsed")
 
 # Define Marken brand colors
@@ -73,6 +74,29 @@ def load_logo():
             return Image.open(logo_path)
     return None
 
+def get_logo_base64():
+    """Convert logo to base64 for inline display"""
+    logo_image = load_logo()
+    if logo_image:
+        import io
+        buffer = io.BytesIO()
+        logo_image.save(buffer, format='PNG')
+        img_str = base64.b64encode(buffer.getvalue()).decode()
+        return f"data:image/png;base64,{img_str}"
+    return None
+
+# Get logo as base64 for inline use
+logo_base64 = get_logo_base64()
+
+# Create inline logo HTML
+def get_inline_logo_html(height=20):
+    """Get HTML for inline logo display"""
+    if logo_base64:
+        return f'<img src="{logo_base64}" style="height:{height}px; vertical-align:middle; margin-right:5px;">'
+    else:
+        # Fallback to text representation with green hexagons
+        return '<span style="color:#8DC63F; font-weight:800;">⬢⬢⬢</span> <span style="color:#003865; font-weight:700;">MARKEN</span>'
+
 # Add Marken Logo Header
 logo_image = load_logo()
 
@@ -93,22 +117,28 @@ if logo_image:
     
     st.markdown("<hr style='border: 1px solid #e0e0e0; margin: 10px 0 20px 0;'>", unsafe_allow_html=True)
 else:
-    # Fallback header if logo not found
+    # Fallback header with green hexagons representation
     st.markdown("""
-    <div class="marken-header">
-        <div class="marken-logo">
+    <div style="padding: 20px 0; border-bottom: 2px solid #e0e0e0;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <div class="marken-logo-text" style="color: #003865; font-size: 32px; font-weight: 700;">MARKEN</div>
-                <div class="marken-tagline" style="color: #58595B; font-size: 14px;">a UPS Company</div>
+                <span style="color: #8DC63F; font-size: 24px; font-weight: bold;">⬢⬢⬢</span>
+                <span style="color: #003865; font-size: 32px; font-weight: 700; margin-left: 10px;">MARKEN</span>
+                <span style="color: #58595B; font-size: 14px; margin-left: 10px;">a UPS Company</span>
             </div>
-        </div>
-        <div style="text-align: right; color: #58595B; font-size: 14px;">
-            Healthcare & Non-Healthcare Dashboard | OTP Analysis
+            <div style="text-align: right;">
+                <span style="color: #58595B; font-size: 14px;">Healthcare & Non-Healthcare Dashboard</span><br>
+                <span style="color: #003865; font-size: 16px; font-weight: 600;">OTP Performance Analysis</span>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-st.title("Healthcare Logistics Performance Dashboard")
+st.markdown(f"""
+<h1 style="color: #003865; font-weight: 700; text-align: center; margin-top: 20px;">
+Healthcare Logistics Performance Dashboard
+</h1>
+""", unsafe_allow_html=True)
 
 # ---------------- Config ----------------
 OTP_TARGET = 95
@@ -1524,10 +1554,14 @@ with st.sidebar:
         st.image(logo_image_sidebar, width=200)
         st.markdown("---")
     else:
+        # Show green hexagons with Marken text
         st.markdown("""
         <div style="text-align: center; padding: 20px 0;">
-            <div style="color: #003865; font-size: 20px; font-weight: 700; letter-spacing: 1px;">MARKEN</div>
-            <div style="color: #58595B; font-size: 11px; margin-top: 5px;">a UPS Company</div>
+            <div>
+                <span style="color: #8DC63F; font-size: 20px; font-weight: bold;">⬢⬢⬢</span><br>
+                <span style="color: #003865; font-size: 20px; font-weight: 700; letter-spacing: 1px;">MARKEN</span><br>
+                <span style="color: #58595B; font-size: 11px; margin-top: 5px;">a UPS Company</span>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("---")
@@ -1542,9 +1576,11 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 📊 About this Dashboard")
-    st.markdown("""
+    
+    # Use inline logo in about section
+    about_html = f"""
     <div style="font-size: 13px; color: #58595B;">
-    This Marken dashboard analyzes On-Time Performance (OTP) for:
+    This {get_inline_logo_html(16)} dashboard analyzes On-Time Performance (OTP) for:
     
     <b style="color: #003865;">• Healthcare:</b> Medical, pharmaceutical, and life science companies<br>
     <b style="color: #003865;">• Non-Healthcare:</b> Aviation, logistics, and other industries<br>
@@ -1564,7 +1600,8 @@ with st.sidebar:
     • Account classification overview<br>
     • Month-over-month performance analysis
     </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(about_html, unsafe_allow_html=True)
 
 if not uploaded_file:
     # Marken-style colored container using columns for layout
