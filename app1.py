@@ -545,22 +545,22 @@ def make_semi_gauge(title: str, value: float) -> go.Figure:
     # Center value
     fig.add_annotation(
         text=f"<b>{v:.1f}%</b>", 
-        x=0.5, y=0.5, xref="paper", yref="paper",
+        x=0.5, y=0.55, xref="paper", yref="paper",
         showarrow=False, 
-        font=dict(size=28, color=MARKEN_NAVY, family="DM Sans, sans-serif")
+        font=dict(size=26, color=MARKEN_NAVY, family="DM Sans, sans-serif")
     )
     
-    # Title below
+    # Title below - positioned lower with more space
     fig.add_annotation(
-        text=title, 
-        x=0.5, y=-0.05, xref="paper", yref="paper",
+        text=f"<b>{title}</b>", 
+        x=0.5, y=0.08, xref="paper", yref="paper",
         showarrow=False, 
-        font=dict(size=12, color="#6B7280", family="Source Sans Pro, sans-serif")
+        font=dict(size=13, color="#374151", family="Source Sans Pro, sans-serif")
     )
     
     fig.update_layout(
-        margin=dict(l=10, r=10, t=20, b=30), 
-        height=180, 
+        margin=dict(l=10, r=10, t=30, b=50), 
+        height=220, 
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)"
     )
@@ -611,7 +611,7 @@ def create_performance_tables(monthly_changes: pd.DataFrame, month: str, sector:
     
     # Section header
     st.markdown(f"""
-    <div style="margin: 24px 0 16px 0;">
+    <div style="margin: 36px 0 20px 0;">
         <span style="color: #003865; font-size: 18px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
             Performance Analysis — {month}
         </span>
@@ -1126,29 +1126,13 @@ def calc_summary(d: pd.DataFrame):
 # MBB-Style Chart Configuration
 def get_mbb_chart_layout(title="", height=450, show_legend=True):
     """Return MBB-style chart layout configuration."""
-    return dict(
-        title=dict(
-            text=title,
-            font=dict(size=16, color=MARKEN_NAVY, family="DM Sans, sans-serif"),
-            x=0,
-            xanchor='left'
-        ),
+    layout = dict(
         height=height,
         hovermode="x unified",
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=60, r=40, t=60, b=60),
-        legend=dict(
-            orientation="h", 
-            yanchor="bottom", 
-            y=1.02, 
-            x=0.5,
-            xanchor="center",
-            font=dict(size=12, family="Source Sans Pro, sans-serif"),
-            bgcolor="rgba(255,255,255,0.8)"
-        ) if show_legend else dict(visible=False),
+        margin=dict(l=60, r=60, t=80, b=80),
         xaxis=dict(
-            title="",
             tickfont=dict(size=11, color="#6B7280", family="Source Sans Pro, sans-serif"),
             tickangle=-30,
             showgrid=False,
@@ -1157,7 +1141,6 @@ def get_mbb_chart_layout(title="", height=450, show_legend=True):
             linewidth=1
         ),
         yaxis=dict(
-            title="",
             tickfont=dict(size=11, color="#6B7280", family="Source Sans Pro, sans-serif"),
             gridcolor="#F3F4F6",
             gridwidth=1,
@@ -1168,6 +1151,30 @@ def get_mbb_chart_layout(title="", height=450, show_legend=True):
             linewidth=1
         )
     )
+    
+    if title:
+        layout['title'] = dict(
+            text=title,
+            font=dict(size=16, color=MARKEN_NAVY, family="DM Sans, sans-serif"),
+            x=0,
+            xanchor='left',
+            y=0.95
+        )
+    
+    if show_legend:
+        layout['legend'] = dict(
+            orientation="h", 
+            yanchor="bottom", 
+            y=1.02, 
+            x=0.5,
+            xanchor="center",
+            font=dict(size=12, family="Source Sans Pro, sans-serif"),
+            bgcolor="rgba(255,255,255,0.8)"
+        )
+    else:
+        layout['showlegend'] = False
+    
+    return layout
 
 def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gross_df: pd.DataFrame = None, debug_mode: bool = False):
     """Create MBB-style dashboard view."""
@@ -1270,7 +1277,15 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
         """, unsafe_allow_html=True)
 
     # ---------------- OTP Gauges ----------------
-    st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style="text-align: center; margin-bottom: 20px;">
+        <span style="color: #003865; font-size: 16px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
+            OTP Performance Indicators
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3)
     with c1: 
@@ -1283,6 +1298,8 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
     with c3: 
         st.plotly_chart(make_semi_gauge("Raw OTP", gross_otp),
                        use_container_width=True, config={"displayModeBar": False}, key=f"{tab_name}_gauge_gross")
+    
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
     # Methodology note
     with st.expander("📋 Methodology & Definitions"):
@@ -1317,7 +1334,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
     
     # ---------------- Gross Metrics Section ----------------
     st.markdown(f"""
-    <div style="margin: 24px 0 16px 0;">
+    <div style="margin: 36px 0 20px 0;">
         <span style="color: #003865; font-size: 18px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
             Gross Metrics Overview
         </span>
@@ -1381,7 +1398,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
 
     # ---------------- Performance Analysis Section ----------------
     st.markdown(f"""
-    <div style="margin: 24px 0 16px 0;">
+    <div style="margin: 36px 0 20px 0;">
         <span style="color: #003865; font-size: 18px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
             Month-over-Month Performance
         </span>
@@ -1407,7 +1424,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
             # Revenue Trend Chart - MBB Style
             st.markdown("<hr>", unsafe_allow_html=True)
             st.markdown(f"""
-            <div style="margin: 24px 0 16px 0;">
+            <div style="margin: 36px 0 20px 0;">
                 <span style="color: #003865; font-size: 18px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
                     Revenue Trend Analysis
                 </span>
@@ -1496,7 +1513,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
 
     # ---------------- OTP by Volume Chart - MBB Style ----------------
     st.markdown(f"""
-    <div style="margin: 24px 0 16px 0;">
+    <div style="margin: 36px 0 20px 0;">
         <span style="color: #003865; font-size: 18px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
             OTP Performance by Volume
         </span>
@@ -1574,7 +1591,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
             gridcolor="#F3F4F6",
             showgrid=True,
             tickfont=dict(size=11, color="#6B7280"),
-            titlefont=dict(size=12, color="#374151")
+            title_font=dict(size=12, color="#374151")
         )
         layout['yaxis2'] = dict(
             title="OTP (%)",
@@ -1583,7 +1600,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
             range=[0, 110],
             showgrid=False,
             tickfont=dict(size=11, color="#6B7280"),
-            titlefont=dict(size=12, color="#374151")
+            title_font=dict(size=12, color="#374151")
         )
         layout['barmode'] = "overlay"
         fig.update_layout(**layout)
@@ -1594,7 +1611,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
 
     # ---------------- OTP by Pieces Chart - MBB Style ----------------
     st.markdown(f"""
-    <div style="margin: 24px 0 16px 0;">
+    <div style="margin: 36px 0 20px 0;">
         <span style="color: #003865; font-size: 18px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
             OTP Performance by Pieces
         </span>
@@ -1668,7 +1685,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
             gridcolor="#F3F4F6",
             showgrid=True,
             tickfont=dict(size=11, color="#6B7280"),
-            titlefont=dict(size=12, color="#374151")
+            title_font=dict(size=12, color="#374151")
         )
         layout['yaxis2'] = dict(
             title="OTP (%)",
@@ -1677,7 +1694,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
             range=[0, 110],
             showgrid=False,
             tickfont=dict(size=11, color="#6B7280"),
-            titlefont=dict(size=12, color="#374151")
+            title_font=dict(size=12, color="#374151")
         )
         layout['barmode'] = "overlay"
         figp.update_layout(**layout)
@@ -1688,7 +1705,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
 
     # ---------------- OTP Trend Chart - MBB Style ----------------
     st.markdown(f"""
-    <div style="margin: 24px 0 16px 0;">
+    <div style="margin: 36px 0 20px 0;">
         <span style="color: #003865; font-size: 18px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
             OTP Trend Comparison
         </span>
@@ -1761,7 +1778,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
             gridcolor="#F3F4F6",
             showgrid=True,
             tickfont=dict(size=11, color="#6B7280"),
-            titlefont=dict(size=12, color="#374151")
+            title_font=dict(size=12, color="#374151")
         )
         fig2.update_layout(**layout)
         
@@ -1771,7 +1788,7 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
 
     # ---------------- Worst Accounts Section - MBB Style ----------------
     st.markdown(f"""
-    <div style="margin: 24px 0 16px 0;">
+    <div style="margin: 36px 0 20px 0;">
         <span style="color: #003865; font-size: 18px; font-weight: 600; font-family: 'DM Sans', sans-serif;">
             Accounts Requiring Attention
         </span>
