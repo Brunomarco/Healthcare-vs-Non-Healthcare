@@ -1999,11 +1999,11 @@ if not uploaded_file:
                 <div style="color: #003865; font-weight: 600; font-size: 16px; margin-bottom: 8px;">Export Data → Select "Shipment Report AH VAR" (from Alberto)</div>
                 <div style="color: #6B7280; font-size: 14px;">Download Excel files with <b>DEL DATE ACT</b> (specify your desired time range) for:</div>
                 <ul style="color: #374151; font-size: 14px; margin: 12px 0 0 0; padding-left: 20px; line-height: 1.8;">
-                    <li>Americas International Desk</li>
+                    <li>Aviation Services</li>
                     <li>Amsterdam</li>
                     <li>London</li>
                     <li>MNX Charter</li>
-                    <li>Aviation Services</li>
+                    <li>Americas International Desk</li>
                     <li>RadioPharma</li>
                 </ul>
             </div>
