@@ -1944,38 +1944,46 @@ if not uploaded_file:
     </div>
     """, unsafe_allow_html=True)
     
-    # Instructions
+    # Instructions using Streamlit columns
     st.markdown("""
-    <div style="max-width: 800px; margin: 32px auto;">
-        <h3 style="color: #003865; font-size: 18px; margin-bottom: 20px;">📋 Data Preparation Steps</h3>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-            <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px;">
-                <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">1</div>
-                <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Export from TMS</div>
-                <div style="color: #6B7280; font-size: 13px;">Navigate to Reports → Shipment Report AH VAR</div>
-            </div>
-            
-            <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px;">
-                <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">2</div>
-                <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Select Date Range</div>
-                <div style="color: #6B7280; font-size: 13px;">Filter by DEL DATE ACT for desired period</div>
-            </div>
-            
-            <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px;">
-                <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">3</div>
-                <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Download All Desks</div>
-                <div style="color: #6B7280; font-size: 13px;">Export data for all regional desks</div>
-            </div>
-            
-            <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px;">
-                <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">4</div>
-                <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Merge & Upload</div>
-                <div style="color: #6B7280; font-size: 13px;">Combine sheets into single Excel file</div>
-            </div>
-        </div>
-    </div>
+    <h3 style="color: #003865; font-size: 18px; margin: 32px 0 20px 0; text-align: center;">📋 Data Preparation Steps</h3>
     """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+            <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">1</div>
+            <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Export from TMS</div>
+            <div style="color: #6B7280; font-size: 13px;">Navigate to Reports → Shipment Report AH VAR</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px;">
+            <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">3</div>
+            <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Download All Desks</div>
+            <div style="color: #6B7280; font-size: 13px;">Export data for all regional desks</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+            <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">2</div>
+            <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Select Date Range</div>
+            <div style="color: #6B7280; font-size: 13px;">Filter by DEL DATE ACT for desired period</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px;">
+            <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">4</div>
+            <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Merge & Upload</div>
+            <div style="color: #6B7280; font-size: 13px;">Combine sheets into single Excel file</div>
+        </div>
+        """, unsafe_allow_html=True)
     
     st.stop()
 
