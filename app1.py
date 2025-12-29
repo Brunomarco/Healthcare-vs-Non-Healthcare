@@ -539,28 +539,29 @@ def make_semi_gauge(title: str, value: float) -> go.Figure:
         values=[v, 100 - v, 100],
         hole=0.78, sort=False, direction="clockwise", rotation=180,
         textinfo="none", showlegend=False,
-        marker=dict(colors=[gauge_color, "#F3F4F6", "rgba(0,0,0,0)"])
+        marker=dict(colors=[gauge_color, "#F3F4F6", "rgba(0,0,0,0)"]),
+        domain=dict(x=[0.1, 0.9], y=[0.25, 1])  # Move gauge up to leave space for label
     ))
     
-    # Center value
+    # Center value - positioned in the gauge center
     fig.add_annotation(
         text=f"<b>{v:.1f}%</b>", 
-        x=0.5, y=0.55, xref="paper", yref="paper",
+        x=0.5, y=0.62, xref="paper", yref="paper",
         showarrow=False, 
         font=dict(size=26, color=MARKEN_NAVY, family="DM Sans, sans-serif")
     )
     
-    # Title below - positioned lower with more space
+    # Title below - positioned well below the gauge arc
     fig.add_annotation(
         text=f"<b>{title}</b>", 
-        x=0.5, y=0.08, xref="paper", yref="paper",
+        x=0.5, y=0.05, xref="paper", yref="paper",
         showarrow=False, 
         font=dict(size=13, color="#374151", family="Source Sans Pro, sans-serif")
     )
     
     fig.update_layout(
-        margin=dict(l=10, r=10, t=30, b=50), 
-        height=220, 
+        margin=dict(l=10, r=10, t=20, b=10), 
+        height=240, 
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)"
     )
@@ -1363,11 +1364,16 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
                         text=[f"{int(v):,}" for v in gross_vol_pod['Volume']],
                         textposition='outside',
                         textfont=dict(size=11, color=MARKEN_NAVY, family="DM Sans, sans-serif"),
-                        hovertemplate="<b>%{x}</b><br>Volume: %{y:,}<extra></extra>"
+                        hovertemplate="<b>%{x}</b><br>Volume: %{y:,}<extra></extra>",
+                        cliponaxis=False
                     ))
                     
-                    layout = get_mbb_chart_layout("Gross Volume by Month", height=380, show_legend=False)
+                    layout = get_mbb_chart_layout("Gross Volume by Month", height=420, show_legend=False)
                     layout['yaxis']['title'] = "Volume"
+                    # Add 15% padding at top for labels
+                    max_vol = gross_vol_pod['Volume'].max()
+                    layout['yaxis']['range'] = [0, max_vol * 1.18]
+                    layout['margin'] = dict(l=60, r=40, t=80, b=80)
                     fig_gross_vol.update_layout(**layout)
                     
                     st.plotly_chart(fig_gross_vol, use_container_width=True, key=f"{tab_name}_gross_vol")
@@ -1385,11 +1391,16 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
                         text=[f"{int(v):,}" for v in gross_pieces_pod['Pieces']],
                         textposition='outside',
                         textfont=dict(size=11, color="#047857", family="DM Sans, sans-serif"),
-                        hovertemplate="<b>%{x}</b><br>Pieces: %{y:,}<extra></extra>"
+                        hovertemplate="<b>%{x}</b><br>Pieces: %{y:,}<extra></extra>",
+                        cliponaxis=False
                     ))
                     
-                    layout = get_mbb_chart_layout("Gross Pieces by Month", height=380, show_legend=False)
+                    layout = get_mbb_chart_layout("Gross Pieces by Month", height=420, show_legend=False)
                     layout['yaxis']['title'] = "Pieces"
+                    # Add 15% padding at top for labels
+                    max_pieces = gross_pieces_pod['Pieces'].max()
+                    layout['yaxis']['range'] = [0, max_pieces * 1.18]
+                    layout['margin'] = dict(l=60, r=40, t=80, b=80)
                     fig_gross_pieces.update_layout(**layout)
                     
                     st.plotly_chart(fig_gross_pieces, use_container_width=True, key=f"{tab_name}_gross_pieces")
@@ -1961,46 +1972,78 @@ if not uploaded_file:
     </div>
     """, unsafe_allow_html=True)
     
-    # Instructions using Streamlit columns
+    # Detailed Instructions
     st.markdown("""
-    <h3 style="color: #003865; font-size: 18px; margin: 32px 0 20px 0; text-align: center;">📋 Data Preparation Steps</h3>
+    <h3 style="color: #003865; font-size: 20px; margin: 40px 0 24px 0; text-align: center;">📋 How to Build the Excel File</h3>
     """, unsafe_allow_html=True)
     
-    col1, col2 = st.columns(2)
+    # Step 1: Go to TMS
+    st.markdown("""
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 24px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: flex-start;">
+            <div style="background: #8DC63F; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-right: 16px; flex-shrink: 0;">1</div>
+            <div>
+                <div style="color: #003865; font-weight: 600; font-size: 16px; margin-bottom: 8px;">Go to TMS → Navigate to Reports</div>
+                <div style="color: #6B7280; font-size: 14px;">Access the TMS system and navigate to the Reports section</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    with col1:
-        st.markdown("""
-        <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
-            <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">1</div>
-            <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Export from TMS</div>
-            <div style="color: #6B7280; font-size: 13px;">Navigate to Reports → Shipment Report AH VAR</div>
+    # Step 2: Export Data
+    st.markdown("""
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 24px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: flex-start;">
+            <div style="background: #8DC63F; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-right: 16px; flex-shrink: 0;">2</div>
+            <div>
+                <div style="color: #003865; font-weight: 600; font-size: 16px; margin-bottom: 8px;">Export Data → Select "Shipment Report AH VAR" (from Alberto)</div>
+                <div style="color: #6B7280; font-size: 14px;">Download Excel files with <b>DEL DATE ACT</b> (specify your desired time range) for:</div>
+                <ul style="color: #374151; font-size: 14px; margin: 12px 0 0 0; padding-left: 20px; line-height: 1.8;">
+                    <li>Americas International Desk</li>
+                    <li>Amsterdam</li>
+                    <li>London</li>
+                    <li>MNX Charter</li>
+                    <li>Aviation Services</li>
+                    <li>RadioPharma</li>
+                </ul>
+            </div>
         </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px;">
-            <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">3</div>
-            <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Download All Desks</div>
-            <div style="color: #6B7280; font-size: 13px;">Export data for all regional desks</div>
-        </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
     
-    with col2:
-        st.markdown("""
-        <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
-            <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">2</div>
-            <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Select Date Range</div>
-            <div style="color: #6B7280; font-size: 13px;">Filter by DEL DATE ACT for desired period</div>
+    # Step 3: Merge Sheets
+    st.markdown("""
+    <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 24px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: flex-start;">
+            <div style="background: #8DC63F; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-right: 16px; flex-shrink: 0;">3</div>
+            <div>
+                <div style="color: #003865; font-weight: 600; font-size: 16px; margin-bottom: 8px;">Merge all sheets into a single Excel file</div>
+                <div style="color: #6B7280; font-size: 14px;">Name the sheets in this <b>exact order</b>:</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;">
+                    <span style="background: #F3F4F6; color: #003865; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: 500;">1. Aviation SVC</span>
+                    <span style="background: #F3F4F6; color: #003865; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: 500;">2. MNX Charter</span>
+                    <span style="background: #F3F4F6; color: #003865; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: 500;">3. AMS</span>
+                    <span style="background: #F3F4F6; color: #003865; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: 500;">4. LDN</span>
+                    <span style="background: #F3F4F6; color: #003865; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: 500;">5. Americas International Desk</span>
+                    <span style="background: #F3F4F6; color: #003865; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: 500;">6. RadioPharma</span>
+                </div>
+            </div>
         </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div style="background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 20px;">
-            <div style="color: #8DC63F; font-size: 24px; font-weight: 700; margin-bottom: 8px;">4</div>
-            <div style="color: #003865; font-weight: 600; margin-bottom: 4px;">Merge & Upload</div>
-            <div style="color: #6B7280; font-size: 13px;">Combine sheets into single Excel file</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Step 4: Upload
+    st.markdown("""
+    <div style="background: #EFF6FF; border: 2px solid #3B82F6; border-radius: 8px; padding: 24px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: flex-start;">
+            <div style="background: #3B82F6; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-right: 16px; flex-shrink: 0;">4</div>
+            <div>
+                <div style="color: #1E40AF; font-weight: 600; font-size: 16px; margin-bottom: 8px;">Upload the merged Excel file</div>
+                <div style="color: #3B82F6; font-size: 14px;">Use the <b>upload button in the sidebar</b> (left panel) to upload your prepared file</div>
+            </div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
     
     st.stop()
 
