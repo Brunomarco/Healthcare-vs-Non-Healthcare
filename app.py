@@ -12,7 +12,7 @@ import io
 from PIL import Image
 
 # ---------------- Page & Style ----------------
-st.set_page_config(page_title="Marken Logistics Dashboard", page_icon="🟢",
+st.set_page_config(page_title="Marken Healthcare Logistics Dashboard", page_icon="🟢",
                    layout="wide", initial_sidebar_state="collapsed")
 
 # Define Marken brand colors
@@ -136,7 +136,7 @@ else:
 
 st.markdown(f"""
 <h1 style="color: #003865; font-weight: 700; text-align: center; margin-top: 20px;">
-Logistics Performance Dashboard
+Healthcare Logistics Performance Dashboard
 </h1>
 """, unsafe_allow_html=True)
 
@@ -258,6 +258,22 @@ def is_healthcare(account_name, sheet_name=None):
     
     # Default to False for uncertain cases
     return False
+
+def verify_classification(df):
+    """Verify healthcare classification is working correctly"""
+    if df.empty or 'ACCT NM' not in df.columns:
+        return {}
+    
+    results = {}
+    for account in df['ACCT NM'].dropna().unique()[:20]:  # Check first 20 accounts
+        sheet = df[df['ACCT NM'] == account]['Source_Sheet'].iloc[0] if 'Source_Sheet' in df.columns else None
+        is_hc = is_healthcare(account, sheet)
+        results[account] = {
+            'is_healthcare': is_hc,
+            'sheet': sheet,
+            'reason': 'AMS sheet' if sheet == 'AMS' else 'Aviation sheet' if sheet == 'Aviation SVC' else 'Keyword match' if is_hc else 'No match/Non-HC keyword'
+        }
+    return results
 
 def make_semi_gauge(title: str, value: float) -> go.Figure:
     """Semi-donut gauge with centered % - Marken branded."""
@@ -938,6 +954,65 @@ def create_dashboard_view(df: pd.DataFrame, tab_name: str, otp_target: float, gr
     
     vol_pod, pieces_pod, otp_pod, revenue_pod = monthly_frames(processed_df)
     gross_otp, net_otp, volume_total, exceptions, controllables, uncontrollables, total_revenue = calc_summary(processed_df)
+    
+    # DEBUG: Show unique accounts and data verification
+    if debug_mode:
+        with st.expander(f"🔍 Debug: {tab_name} Data Verification"):
+            st.write(f"**Total rows in {tab_name}:** {len(df):,}")
+            st.write(f"**Total processed rows:** {len(processed_df):,}")
+            
+            if 'ACCT NM' in processed_df.columns:
+                unique_accounts = processed_df['ACCT NM'].nunique()
+                st.write(f"**Unique accounts:** {unique_accounts}")
+                st.write(f"**Sample accounts (first 10):**")
+                st.write(list(processed_df['ACCT NM'].dropna().unique()[:10]))
+            
+            if 'Source_Sheet' in processed_df.columns:
+                st.write(f"**Source sheets contributing to {tab_name}:**")
+                sheet_counts = processed_df['Source_Sheet'].value_counts()
+                st.dataframe(sheet_counts)
+            
+            # Show OTP calculation breakdown
+            st.write(f"\n**OTP Calculation Details:**")
+            base_otp = processed_df.dropna(subset=["_pod","_target"])
+            if len(base_otp) > 0:
+                st.write(f"- Rows with POD and target: {len(base_otp):,}")
+                st.write(f"- On-time (Gross): {base_otp['On_Time_Gross'].sum():,}")
+                st.write(f"- On-time (Net): {base_otp['On_Time_Net'].sum():,}")
+                st.write(f"- Gross OTP: {gross_otp:.2f}%")
+                st.write(f"- Net OTP: {net_otp:.2f}%")
+                st.write(f"- Controllable exceptions: {controllables:,}")
+                st.write(f"- Uncontrollable exceptions: {uncontrollables:,}")
+            
+            # Verify no overlap between tabs
+            if tab_name == "Healthcare" and 'ACCT NM' in df.columns:
+                st.session_state['healthcare_accounts'] = set(df['ACCT NM'].dropna().unique())
+                
+                # Show classification verification
+                st.markdown("**Classification Verification (sample):**")
+                verification = verify_classification(df.head(100))
+                if verification:
+                    sample_df = pd.DataFrame.from_dict(verification, orient='index')
+                    st.dataframe(sample_df.head(10))
+                
+            elif tab_name == "Non-Healthcare" and 'ACCT NM' in df.columns:
+                st.session_state['non_healthcare_accounts'] = set(df['ACCT NM'].dropna().unique())
+                
+                # Show classification verification
+                st.markdown("**Classification Verification (sample):**")
+                verification = verify_classification(df.head(100))
+                if verification:
+                    sample_df = pd.DataFrame.from_dict(verification, orient='index')
+                    st.dataframe(sample_df.head(10))
+                
+                # Check for overlap
+                if 'healthcare_accounts' in st.session_state:
+                    overlap = st.session_state['healthcare_accounts'].intersection(st.session_state['non_healthcare_accounts'])
+                    if overlap:
+                        st.warning(f"⚠️ Found {len(overlap)} accounts in BOTH Healthcare and Non-Healthcare!")
+                        st.write("Overlapping accounts:", list(overlap)[:10])
+                    else:
+                        st.success("✅ No account overlap - data properly separated")
     
     # ---------------- KPIs & Gauges ----------------
     left, right = st.columns([1, 1.5])
@@ -1790,6 +1865,45 @@ with st.expander("📈 Data Processing Statistics"):
         st.metric("HC / Non-HC", f"{stats.get('healthcare_rows', 0):,} / {stats.get('non_healthcare_rows', 0):,}")
     with col6:
         st.metric("RadioPharma", f"{stats.get('radiopharma_rows', 0):,}")
+    
+    # Add OTP comparison when in debug mode
+    if debug_mode and not healthcare_df.empty and not non_healthcare_df.empty:
+        st.markdown("#### 🔍 OTP Quick Comparison")
+        
+        # Calculate OTP for each category
+        hc_processed = preprocess(healthcare_df)
+        nhc_processed = preprocess(non_healthcare_df)
+        
+        hc_gross, hc_net, _, _, _, _, _ = calc_summary(hc_processed)
+        nhc_gross, nhc_net, _, _, _, _, _ = calc_summary(nhc_processed)
+        
+        comp_col1, comp_col2, comp_col3 = st.columns(3)
+        
+        with comp_col1:
+            st.markdown("**Healthcare OTP:**")
+            st.write(f"- Gross: {hc_gross:.2f}%" if pd.notna(hc_gross) else "- Gross: N/A")
+            st.write(f"- Net: {hc_net:.2f}%" if pd.notna(hc_net) else "- Net: N/A")
+        
+        with comp_col2:
+            st.markdown("**Non-Healthcare OTP:**")
+            st.write(f"- Gross: {nhc_gross:.2f}%" if pd.notna(nhc_gross) else "- Gross: N/A")
+            st.write(f"- Net: {nhc_net:.2f}%" if pd.notna(nhc_net) else "- Net: N/A")
+        
+        with comp_col3:
+            st.markdown("**Difference:**")
+            if pd.notna(hc_gross) and pd.notna(nhc_gross):
+                st.write(f"- Gross: {abs(hc_gross - nhc_gross):.2f}%")
+            else:
+                st.write("- Gross: N/A")
+            
+            if pd.notna(hc_net) and pd.notna(nhc_net):
+                st.write(f"- Net: {abs(hc_net - nhc_net):.2f}%")
+                
+                # Alert if values are suspiciously similar
+                if abs(hc_net - nhc_net) < 0.1:
+                    st.warning("⚠️ Healthcare and Non-Healthcare have nearly identical Net OTP!")
+            else:
+                st.write("- Net: N/A")
     
     if 'by_sheet' in stats:
         st.markdown("#### Breakdown by Sheet:")
